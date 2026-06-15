@@ -1,6 +1,6 @@
 {
   "name": "electron-app",
-  "version": "1.0.0",
+  "version": "1.0.6",
   "description": "An Electron application with Vue and TypeScript",
   "main": "./out/main/index.js",
   "author": "example.com",
@@ -9,20 +9,27 @@
     "format": "prettier --write .",
     "lint": "eslint . --ext .js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts,.vue --fix",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
-    "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "electron-vite build",
+    "build:backend": "cd backend && uv run pyinstaller backend.spec",
     "postinstall": "electron-builder install-app-deps",
-    "build:unpack": "npm run build && electron-builder --dir",
-    "build:win": "npm run build && electron-builder --win",
-    "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux"
+    "build:unpack": "npm run build:backend && npm run build && electron-builder --dir",
+    "build:win": "npm run build:backend && npm run build && electron-builder --win",
+    "build:mac": "npm run build:backend && npm run build && electron-builder --mac",
+    "build:linux": "npm run build:backend && npm run build && electron-builder --linux"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.0",
-    "@electron-toolkit/utils": "^3.0.0"
+    "@electron-toolkit/utils": "^3.0.0",
+    "axios": "^1.17.0",
+    "lucide-react": "^1.17.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.17.0",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config": "^1.0.2",
@@ -30,7 +37,9 @@
     "@electron-toolkit/tsconfig": "^1.0.1",
     "@rushstack/eslint-patch": "^1.7.1",
     "@types/node": "^18.19.9",
-    "@vitejs/plugin-vue": "^5.0.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.2.1",
     "@vue/eslint-config-prettier": "^9.0.0",
     "@vue/eslint-config-typescript": "^12.0.0",
     "electron": "^28.2.0",
@@ -40,8 +49,6 @@
     "eslint-plugin-vue": "^9.20.1",
     "prettier": "^3.2.4",
     "typescript": "^5.3.3",
-    "vite": "^5.0.12",
-    "vue": "^3.4.15",
-    "vue-tsc": "^1.8.27"
+    "vite": "^5.0.12"
   }
 }

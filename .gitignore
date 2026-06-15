@@ -3,3 +3,26 @@ dist
 out
 .DS_Store
 *.log*
+
+# Build / packaging artifacts (generated — rebuild via npm run build:*)
+backend/build/
+backend/dist/
+desktop-release/
+
+# Vendored runtime binaries (fetch separately; not committed)
+resources/bin/
+*.exe
+*.pkg
+*.pyz
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+*.pyc
+
+# Local data / secrets (never commit)
+backend/data/
+*.sqlite
+.env
+.env.*

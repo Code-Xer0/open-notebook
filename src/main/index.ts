@@ -2,14 +2,75 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { spawn, ChildProcess } from 'child_process'
+
+let surrealProcess: ChildProcess | null = null
+let pythonProcess: ChildProcess | null = null
+
+function startBackendProcesses() {
+  const isDev = !app.isPackaged
+  const appPath = isDev ? app.getAppPath() : process.resourcesPath
+
+  // Start SurrealDB
+  const surrealPath = isDev 
+    ? join(appPath, 'resources', 'bin', 'surreal.exe')
+    : join(process.resourcesPath, 'bin', 'surreal.exe')
+    
+  surrealProcess = spawn(surrealPath, [
+    'start', 
+    '--log', 'debug', 
+    '--user', 'root', 
+    '--pass', 'root', 
+    'file:data/surreal.db'
+  ], {
+    cwd: appPath
+  })
+
+  surrealProcess.stdout?.on('data', (data) => console.log(`SurrealDB: ${data}`))
+  surrealProcess.stderr?.on('data', (data) => console.error(`SurrealDB Error: ${data}`))
+
+  // Start Python Backend
+  if (isDev) {
+    const backendPath = join(appPath, 'backend')
+    const envPath = process.env.PATH ? `${process.env.PATH};C:\\Users\\Inf3r\\.local\\bin` : `C:\\Users\\Inf3r\\.local\\bin`
+    pythonProcess = spawn('uv', [
+      'run', 'python', 'run_api.py'
+    ], {
+      cwd: backendPath,
+      env: { ...process.env, PATH: envPath, SURREAL_URL: 'ws://localhost:8000/rpc', SURREAL_USER: 'root', SURREAL_PASS: 'root' },
+      shell: true
+    })
+  } else {
+    const backendExePath = join(process.resourcesPath, 'backend.exe')
+    pythonProcess = spawn(backendExePath, [], {
+      cwd: process.resourcesPath,
+      env: { ...process.env, SURREAL_URL: 'ws://localhost:8000/rpc', SURREAL_USER: 'root', SURREAL_PASS: 'root' }
+    })
+  }
+
+  pythonProcess.stdout?.on('data', (data) => console.log(`Python: ${data}`))
+  pythonProcess.stderr?.on('data', (data) => console.error(`Python Error: ${data}`))
+}
+
+function stopBackendProcesses() {
+  if (surrealProcess) {
+    surrealProcess.kill()
+    surrealProcess = null
+  }
+  if (pythonProcess) {
+    pythonProcess.kill()
+    pythonProcess = null
+  }
+}
 
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: 1280,
+    height: 800,
     show: false,
-    autoHideMenuBar: true,
+    frame: false,
+    titleBarStyle: 'hidden',
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -33,6 +94,17 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  // Register window control handlers
+  ipcMain.on('window-minimize', () => mainWindow.minimize())
+  ipcMain.on('window-maximize', () => {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize()
+    } else {
+      mainWindow.maximize()
+    }
+  })
+  ipcMain.on('window-close', () => mainWindow.close())
 }
 
 // This method will be called when Electron has finished
@@ -51,6 +123,8 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+  
+  startBackendProcesses()
 
   createWindow()
 
@@ -65,10 +139,12 @@ app.whenReady().then(() => {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
+  stopBackendProcesses()
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
 
-// In this file you can include the rest of your app"s specific main process
-// code. You can also put them in separate files and require them here.
+app.on('before-quit', () => {
+  stopBackendProcesses()
+})

@@ -1,0 +1,85 @@
+import React from 'react';
+import { DownloadCloud, FileText, Scissors, Cpu, Network, Search, PenTool } from 'lucide-react';
+import { Card } from './Card';
+
+import { useStore } from '../store/useStore';
+
+interface PipelineStage {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  status: 'idle' | 'processing' | 'healthy' | 'warning' | 'error';
+  value?: string | number;
+}
+
+export function SourcePipelineCard() {
+  const { telemetry } = useStore();
+  
+  const isOnline = telemetry.sourceHealth.connected !== 'Unknown';
+
+  const stages: PipelineStage[] = [
+    { 
+      id: 'intake', label: 'Intake', icon: <DownloadCloud size={16} />, 
+      status: isOnline ? 'idle' : 'idle', 
+      value: isOnline ? (typeof telemetry.ingestionHealth.queued === 'number' && telemetry.ingestionHealth.queued > 0 ? telemetry.ingestionHealth.queued : 'Idle') : 'Offline'
+    },
+    { 
+      id: 'parse', label: 'Parse', icon: <FileText size={16} />, 
+      status: isOnline ? (typeof telemetry.ingestionHealth.parsing === 'number' && telemetry.ingestionHealth.parsing > 0 ? 'processing' : 'idle') : 'idle',
+      value: isOnline ? telemetry.ingestionHealth.parsing : 'Offline' 
+    },
+    { id: 'chunk', label: 'Chunk', icon: <Scissors size={16} />, status: 'idle', value: isOnline ? 'Idle' : 'Offline' },
+    { id: 'embed', label: 'Embed', icon: <Cpu size={16} />, status: 'idle', value: isOnline ? 'Idle' : 'Offline' },
+    { id: 'index', label: 'Index', icon: <Network size={16} />, status: isOnline ? 'healthy' : 'idle', value: isOnline ? telemetry.ingestionHealth.completed : 'Offline' },
+    { id: 'retrieve', label: 'Retrieve', icon: <Search size={16} />, status: isOnline ? 'healthy' : 'idle', value: isOnline ? telemetry.retrievalHealth.latency : 'Offline' },
+    { id: 'synthesize', label: 'Synthesize', icon: <PenTool size={16} />, status: 'idle', value: isOnline ? 'Idle' : 'Offline' }
+  ];
+
+  return (
+    <Card style={{ padding: 'var(--pad-md)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--pad-md)' }}>
+        <h3 style={{ fontSize: 'var(--font-size-sm)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, color: 'var(--text-strong)' }}>
+          Ingestion & Synthesis Pipeline
+        </h3>
+        <span style={{ fontSize: 'var(--font-size-xs)', color: isOnline ? 'var(--signal-healthy)' : 'var(--text-muted)', fontWeight: 600 }}>
+          {isOnline ? 'PIPELINE ACTIVE' : 'PIPELINE OFFLINE'}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative' }}>
+        {/* Connecting Line */}
+        <div style={{ position: 'absolute', top: '50%', left: '0', right: '0', height: '2px', background: 'var(--panel-border-faint)', zIndex: 0, transform: 'translateY(-50%)' }} />
+
+        {stages.map((stage) => {
+          const color = 
+            stage.status === 'healthy' ? 'var(--signal-healthy)' :
+            stage.status === 'processing' ? 'var(--signal-processing)' :
+            stage.status === 'warning' ? 'var(--signal-warning)' :
+            stage.status === 'error' ? 'var(--signal-error)' :
+            'var(--text-muted)';
+            
+          const glow = stage.status === 'processing' ? `0 0 12px ${color}` : 'none';
+
+          return (
+            <div key={stage.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', position: 'relative', zIndex: 1 }}>
+              <div style={{
+                width: '36px', height: '36px', borderRadius: '50%',
+                background: 'var(--panel-bg-solid)',
+                border: `2px solid ${color}`,
+                display: 'grid', placeItems: 'center',
+                color: color,
+                boxShadow: glow
+              }}>
+                {stage.icon}
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '2px' }}>{stage.label}</div>
+                <div style={{ fontSize: '9px', fontFamily: 'var(--font-mono)', color: 'var(--text-faint)' }}>{stage.value}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
