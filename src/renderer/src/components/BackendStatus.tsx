@@ -25,13 +25,15 @@ export function BackendStatus({ compact = false }: { compact?: boolean }) {
       backend.lastChecked ? `Last checked ${new Date(backend.lastChecked).toLocaleTimeString([], { hour12: false })}` : 'Not yet checked'
     }>
       <span
+        className={backend.status === 'online' ? 'live-breathe' : backend.status === 'connecting' ? 'live-pulse' : undefined}
         style={{
           width: '6px',
           height: '6px',
           borderRadius: '50%',
           background: color,
           boxShadow: backend.status === 'online' ? `0 0 8px ${color}` : 'none',
-        }}
+          ['--ring' as string]: 'rgba(245, 194, 107, 0.6)',
+        } as React.CSSProperties}
       />
       {!compact && <span>API: <strong style={{ color }}>{label}</strong></span>}
       {!compact && backend.status === 'online' && backend.version && (

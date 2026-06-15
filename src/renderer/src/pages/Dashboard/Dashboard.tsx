@@ -86,7 +86,7 @@ export function Dashboard() {
         <SourcePipelineCard />
 
         {/* Telemetry Cards Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--pad-md)' }}>
+        <div className="tele-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--pad-md)' }}>
           {telemetryCards.map((card, idx) => (
             <Card key={idx} style={{ padding: 'var(--pad-md)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>

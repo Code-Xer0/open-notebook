@@ -36,7 +36,7 @@ export function Topbar() {
       WebkitAppRegion: 'drag'
     } as any}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', WebkitAppRegion: 'no-drag' } as any}>
-        <div style={{
+        <div className="live-breathe" style={{
           width: '6px', height: '6px', borderRadius: '50%',
           background: 'var(--accent-primary)', boxShadow: '0 0 8px var(--accent-primary)'
         }} />

@@ -60,7 +60,7 @@ export function Sidebar() {
             fontWeight: 900,
             color: 'var(--accent-bright)'
           }}>CODEX</div>
-          <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)' }}>v1.0.5</div>
+          <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--text-muted)' }}>v1.0.7</div>
         </div>
       </div>
       
