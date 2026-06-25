@@ -24,6 +24,7 @@ from api.routers import (
     embedding_rebuild,
     episode_profiles,
     insights,
+    image_capsules,
     languages,
     models,
     notebooks,
@@ -35,8 +36,10 @@ from api.routers import (
     sources,
     speaker_profiles,
     transformations,
+    ontology,
 )
 from api.routers import commands as commands_router
+from api.command_registry import ensure_command_modules
 from open_notebook.database.async_migrate import AsyncMigrationManager
 from open_notebook.exceptions import (
     AuthenticationError,
@@ -91,6 +94,7 @@ def _cors_headers(request: Request) -> dict[str, str]:
 
 # Import commands to register them in the API process
 try:
+    ensure_command_modules()
     logger.info("Commands imported in API process")
 except Exception as e:
     logger.error(f"Failed to import commands in API process: {e}")
@@ -304,6 +308,7 @@ app.include_router(settings.router, prefix="/api", tags=["settings"])
 app.include_router(context.router, prefix="/api", tags=["context"])
 app.include_router(sources.router, prefix="/api", tags=["sources"])
 app.include_router(insights.router, prefix="/api", tags=["insights"])
+app.include_router(image_capsules.router, prefix="/api", tags=["image-capsules"])
 app.include_router(commands_router.router, prefix="/api", tags=["commands"])
 app.include_router(podcasts.router, prefix="/api", tags=["podcasts"])
 app.include_router(episode_profiles.router, prefix="/api", tags=["episode-profiles"])
@@ -312,6 +317,7 @@ app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(source_chat.router, prefix="/api", tags=["source-chat"])
 app.include_router(credentials.router, prefix="/api", tags=["credentials"])
 app.include_router(languages.router, prefix="/api", tags=["languages"])
+app.include_router(ontology.router, prefix="/api", tags=["ontology"])
 
 
 @app.get("/")

@@ -1,9 +1,16 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import type { SidecarStatus } from '../../../preload/index';
+import { codexLightTheme, type ThemeCustomization, type ThemeCustomizations, type ThemeMode } from '../theme';
 
 interface UserSettings {
-  themeFamily: 'operator-crimson' | 'cerberus-red' | 'forge-amber' | 'continuity-gold' | 'argos-cyan' | 'field-blue' | 'obsidian';
+  themeFamily: 'notebook' | 'operator-crimson' | 'cerberus-red' | 'forge-amber' | 'continuity-gold' | 'argos-cyan' | 'field-blue' | 'obsidian';
+  themeMode: ThemeMode;
   themeDensity: 'comfortable' | 'dense' | 'operator-dense';
+  customThemeEnabled: boolean;
+  themeCustomization: Partial<ThemeCustomization>;
+  themeCustomizations: ThemeCustomizations;
+  motionPreset: 'calm' | 'standard' | 'lively';
   
   ollamaEndpoint: string;
   defaultLocalModel: string;
@@ -89,6 +96,9 @@ interface AppState {
 
   backend: BackendState;
   setBackend: (b: Partial<BackendState>) => void;
+
+  sidecars: SidecarStatus | null;
+  setSidecars: (s: SidecarStatus | null) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -99,10 +109,18 @@ export const useStore = create<AppState>()(
 
   backend: { status: 'unknown', version: null, lastChecked: null },
   setBackend: (b) => set((state) => ({ backend: { ...state.backend, ...b } })),
+
+  sidecars: null,
+  setSidecars: (s) => set({ sidecars: s }),
   
   settings: {
-    themeFamily: 'argos-cyan',
+    themeFamily: 'notebook',
+    themeMode: 'system',
     themeDensity: 'comfortable',
+    customThemeEnabled: false,
+    themeCustomization: codexLightTheme,
+    themeCustomizations: { light: codexLightTheme },
+    motionPreset: 'standard',
     ollamaEndpoint: 'http://localhost:11434',
     defaultLocalModel: '',
     openaiApiKey: '',
@@ -160,6 +178,22 @@ export const useStore = create<AppState>()(
     {
       name: 'codex-settings',
       storage: createJSONStorage(() => localStorage),
+      version: 2,
+      migrate: (persistedState) => {
+        const state = persistedState as { settings?: Partial<UserSettings> } | undefined;
+        if (!state?.settings) return persistedState;
+        const settings = state.settings;
+        return {
+          ...state,
+          settings: {
+            ...settings,
+            themeMode: settings.themeMode || 'system',
+            themeCustomizations: settings.themeCustomizations || {
+              light: settings.themeCustomization || codexLightTheme
+            }
+          }
+        };
+      },
       // Persist only operator settings; runtime state (telemetry/backend) stays ephemeral.
       partialize: (state) => ({ settings: state.settings }),
     }

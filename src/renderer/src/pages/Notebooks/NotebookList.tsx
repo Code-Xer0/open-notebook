@@ -25,7 +25,7 @@ export function NotebookList() {
       setErrorDetails({
         isOffline: isNetworkError,
         message: err.message || 'Failed to load notebooks',
-        url: `${API_BASE_URL}/notebooks`
+        url: `${API_BASE_URL}/api/notebooks`
       });
       console.error(err);
     } finally {
@@ -43,7 +43,7 @@ export function NotebookList() {
       setErrorDetails({
         isOffline: isNetworkError,
         message: err.message || 'Failed to create notebook',
-        url: `${API_BASE_URL}/notebooks`
+        url: `${API_BASE_URL}/api/notebooks`
       });
     }
   };
@@ -80,18 +80,18 @@ export function NotebookList() {
           <Loader2 size={32} className="animate-spin" color="var(--color-primary)" />
         </div>
       ) : errorDetails ? (
-        <div style={{ color: '#ef4444', padding: '1.5rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+        <div style={{ color: 'var(--signal-error)', padding: '1.5rem', background: 'var(--danger-veil)', borderRadius: 'var(--radius-md)', border: '1px solid var(--signal-error)' }}>
           <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             {errorDetails.isOffline ? 'Backend Offline' : 'Error'}
           </h3>
           {errorDetails.isOffline && <p style={{ margin: '0 0 0.5rem 0', fontFamily: 'monospace', fontSize: '0.9rem' }}>Attempted URL: {errorDetails.url}</p>}
           <p style={{ margin: '0 0 1.5rem 0' }}>Last error: {errorDetails.message}</p>
           <div style={{ display: 'flex', gap: '1rem' }}>
-            <button className="btn" onClick={loadNotebooks} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>
+            <button className="btn" onClick={loadNotebooks} style={{ background: 'var(--signal-error)', color: 'var(--text-strong)', border: 'none', padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>
               Retry Connection
             </button>
-            <button className="btn" onClick={() => navigate('/diagnostics')} style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>
-              Open Diagnostics
+            <button className="btn" onClick={() => navigate('/settings')} style={{ background: 'transparent', border: '1px solid var(--signal-error)', color: 'var(--signal-error)', padding: '0.5rem 1rem', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>
+              Open Settings
             </button>
           </div>
         </div>
@@ -116,7 +116,7 @@ export function NotebookList() {
                   </div>
                   <div>
                     <h3 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0 }}>{notebook.name}</h3>
-                    <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0, marginTop: '0.25rem' }}>Updated recently</p>
+                    <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', margin: 0, marginTop: '0.25rem' }}>Updated: Unknown</p>
                   </div>
                 </div>
               </div>

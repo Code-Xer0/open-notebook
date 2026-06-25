@@ -36,7 +36,7 @@ export function NotebookDetail() {
   }
 
   if (error || !notebook) {
-    return <div style={{ color: '#ef4444', padding: '1rem' }}>{error || 'Notebook not found'}</div>;
+    return <div style={{ color: 'var(--signal-error)', padding: '1rem' }}>{error || 'Notebook not found'}</div>;
   }
 
   return (
@@ -50,7 +50,7 @@ export function NotebookDetail() {
             </button>
             <h1 className="title" style={{ margin: 0, fontSize: '1.8rem' }}>{notebook.name}</h1>
           </div>
-          <button className="glass-card" style={{ padding: '0.5rem', cursor: 'pointer', display: 'flex', border: '1px solid var(--color-border)', background: 'var(--color-surface)', borderRadius: 'var(--radius-md)', color: 'var(--color-text)' }}>
+          <button title="Notebook settings are not wired yet" disabled className="glass-card" style={{ padding: '0.5rem', cursor: 'not-allowed', opacity: 0.5, display: 'flex', border: '1px solid var(--color-border)', background: 'var(--color-surface)', borderRadius: 'var(--radius-md)', color: 'var(--color-text)' }}>
             <Settings size={20} />
           </button>
         </div>
@@ -62,7 +62,7 @@ export function NotebookDetail() {
               <h2 style={{ fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
                 <FileText size={20} style={{ color: 'var(--color-primary)' }} /> Notes
               </h2>
-              <button className="btn" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Add Note</button>
+              <button className="btn" disabled title="Note creation is not wired yet" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Add Note</button>
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', paddingRight: '0.5rem' }}>
               {notebook.notes?.length > 0 ? notebook.notes.map((note: any, i: number) => (
@@ -82,7 +82,7 @@ export function NotebookDetail() {
               <h2 style={{ fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
                 <LinkIcon size={20} style={{ color: 'var(--color-primary)' }} /> Sources
               </h2>
-              <button className="btn" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Add Source</button>
+              <button className="btn" onClick={() => navigate('/sources')} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>Add Source</button>
             </div>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', paddingRight: '0.5rem' }}>
               {notebook.sources?.length > 0 ? notebook.sources.map((source: any, i: number) => (

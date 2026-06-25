@@ -12,7 +12,7 @@ interface Message {
 export function Chat() {
   const { id: notebookId } = useParams<{ id: string }>();
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'assistant', content: 'Hello! I am ready to help you. What would you like to know?' }
+    { id: '1', role: 'assistant', content: 'Ask a question about this notebook. Answers should be checked against cited source passages.' }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -70,7 +70,7 @@ export function Chat() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        background: 'rgba(255,255,255,0.02)'
+        background: 'var(--panel-subtle)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <div style={{ 
@@ -81,11 +81,11 @@ export function Chat() {
             alignItems: 'center',
             justifyContent: 'center'
           }}>
-            <Sparkles size={16} color="white" />
+            <Sparkles size={16} color="var(--shell-bg)" />
           </div>
           <div>
             <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Notebook Chat</h3>
-            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Using 4 context items</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{notebookId ? 'Grounded to selected notebook' : 'No notebook selected'}</span>
           </div>
         </div>
         <button style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
@@ -105,7 +105,7 @@ export function Chat() {
               width: '32px', 
               height: '32px', 
               borderRadius: '50%', 
-              background: msg.role === 'user' ? 'var(--color-surface-hover)' : 'rgba(99, 102, 241, 0.2)',
+              background: msg.role === 'user' ? 'var(--color-surface-hover)' : 'var(--accent-veil)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -133,7 +133,7 @@ export function Chat() {
         {loading && (
           <div style={{ display: 'flex', gap: '1rem' }}>
             <div style={{ 
-              width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(99, 102, 241, 0.2)',
+              width: '32px', height: '32px', borderRadius: '50%', background: 'var(--accent-veil)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--color-primary)'
             }}>
               <Bot size={16} />
@@ -149,7 +149,7 @@ export function Chat() {
       </div>
 
       {/* Chat Input */}
-      <div style={{ padding: '1.25rem', borderTop: '1px solid var(--color-border)', background: 'rgba(0,0,0,0.2)' }}>
+      <div style={{ padding: '1.25rem', borderTop: '1px solid var(--color-border)', background: 'var(--panel-subtle)' }}>
         <div style={{ 
           display: 'flex', 
           alignItems: 'center', 
@@ -189,7 +189,7 @@ export function Chat() {
             disabled={!input.trim()}
             style={{ 
               background: input.trim() ? 'var(--color-primary)' : 'var(--color-surface-hover)', 
-              color: input.trim() ? 'white' : 'var(--color-text-muted)',
+              color: input.trim() ? 'var(--shell-bg)' : 'var(--color-text-muted)',
               border: 'none',
               borderRadius: '50%',
               width: '36px',

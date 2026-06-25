@@ -1,5 +1,9 @@
 import logging
+import os
+import time
 from fastapi import APIRouter
+from api.command_registry import command_registry_status
+from open_notebook.database.async_migrate import AsyncMigrationManager
 from open_notebook.database.repository import repo_query
 import open_notebook
 
@@ -16,11 +20,59 @@ async def get_health():
 async def get_version():
     """Get backend version."""
     version = getattr(open_notebook, "__version__", "1.9.0")
-    return {"version": version}
+    schema_version = "Unknown"
+    latest_schema_version = "Unknown"
+    migration_status = "Unknown"
+    try:
+        manager = AsyncMigrationManager()
+        current = await manager.get_current_version()
+        latest = len(manager.up_migrations)
+        schema_version = current
+        latest_schema_version = latest
+        migration_status = "current" if current >= latest else "pending"
+    except Exception as e:
+        logger.warning(f"Failed to read migration version: {e}")
+
+    return {
+        "version": version,
+        "backendVersion": version,
+        "appVersion": os.getenv("CODEX_APP_VERSION", "unknown"),
+        "schemaVersion": schema_version,
+        "latestSchemaVersion": latest_schema_version,
+        "migrationStatus": migration_status,
+        "commandRegistry": command_registry_status(),
+    }
+
+
+@router.get("/diagnostics")
+async def get_diagnostics():
+    """Get factual local backend diagnostics."""
+    database = {"status": "unknown", "error": None}
+    try:
+        await repo_query("SELECT id FROM _sbl_migrations LIMIT 1")
+        database = {"status": "online", "error": None}
+    except Exception as e:
+        database = {"status": "error", "error": str(e)}
+
+    version = await get_version()
+    return {
+        "health": "shallow",
+        "database": database,
+        "version": version,
+        "commandRegistry": version["commandRegistry"],
+    }
 
 @router.get("/telemetry/summary")
 async def get_telemetry_summary():
     """Get global knowledge telemetry summary."""
+    measured_latency = "Unknown"
+    try:
+        start = time.perf_counter()
+        await repo_query("SELECT id FROM source LIMIT 1")
+        measured_latency = f"{max(1, int((time.perf_counter() - start) * 1000))}ms"
+    except Exception as e:
+        logger.warning(f"Failed to measure retrieval latency: {e}")
+
     # Attempt to fetch real counts from SurrealDB where feasible
     try:
         sources_res = await repo_query("SELECT id FROM source")
@@ -41,34 +93,34 @@ async def get_telemetry_summary():
     return {
         "sourceHealth": {
             "connected": connected,
-            "failed": 0,  # Could be derived from command table errors later
-            "pending": 0,
+            "failed": "Unknown",
+            "pending": "Unknown",
         },
         "knowledgeCoverage": {
             "citationCoverage": citation_coverage,
-            "orphanContent": 0,
-            "unresolvedEntities": 0,
+            "orphanContent": "Unknown",
+            "unresolvedEntities": "Unknown",
         },
         "retrievalHealth": {
-            "latency": "12ms", # Simulated for UI real-feel, could track DB timing
-            "failed": "0%",
-            "contextDepth": "10",
+            "latency": measured_latency,
+            "failed": "Unknown",
+            "contextDepth": "Unknown",
         },
         "ingestionHealth": {
-            "queued": 0,
-            "parsing": 0,
-            "failed": 0,
+            "queued": "Unknown",
+            "parsing": "Unknown",
+            "failed": "Unknown",
             "completed": connected,
         },
         "narrativeIndex": {
-            "characters": 0,
-            "locations": 0,
-            "factions": 0,
-            "timelines": 0,
+            "characters": "Unknown",
+            "locations": "Unknown",
+            "factions": "Unknown",
+            "timelines": "Unknown",
         },
         "studioQueue": {
-            "audiobookJobs": 0,
-            "reportJobs": 0,
-            "exportJobs": 0,
+            "audiobookJobs": "Unknown",
+            "reportJobs": "Unknown",
+            "exportJobs": "Unknown",
         }
     }

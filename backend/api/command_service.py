@@ -3,6 +3,8 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 from surreal_commands import get_command_status, submit_command
 
+from api.command_registry import ensure_command_modules
+
 
 class CommandService:
     """Generic service layer for command operations"""
@@ -18,11 +20,11 @@ class CommandService:
         try:
             # Ensure command modules are imported before submitting
             # This is needed because submit_command validates against local registry
-            try:
-                import commands.podcast_commands  # noqa: F401
-            except ImportError as import_err:
-                logger.error(f"Failed to import command modules: {import_err}")
-                raise ValueError("Command modules not available")
+            import_status = ensure_command_modules()
+            if not import_status["ok"]:
+                raise ValueError(
+                    f"Command modules not available: {import_status['failed']}"
+                )
 
             # surreal-commands expects: submit_command(app_name, command_name, args)
             cmd_id = submit_command(

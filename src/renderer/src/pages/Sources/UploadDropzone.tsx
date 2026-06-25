@@ -5,9 +5,11 @@ import { Card } from '../../components/Card';
 interface UploadDropzoneProps {
   onFilesSelected: (files: File[]) => void;
   maxFiles?: number;
+  accept?: string;
+  helperText?: string;
 }
 
-export function UploadDropzone({ onFilesSelected, maxFiles = 50 }: UploadDropzoneProps) {
+export function UploadDropzone({ onFilesSelected, maxFiles = 50, accept, helperText }: UploadDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -62,7 +64,7 @@ export function UploadDropzone({ onFilesSelected, maxFiles = 50 }: UploadDropzon
           padding: '3rem 2rem',
           textAlign: 'center',
           cursor: 'pointer',
-          background: isDragging ? 'rgba(99, 102, 241, 0.1)' : 'var(--color-surface)',
+          background: isDragging ? 'var(--accent-veil)' : 'var(--color-surface)',
           transition: 'var(--transition)',
           display: 'flex',
           flexDirection: 'column',
@@ -72,7 +74,7 @@ export function UploadDropzone({ onFilesSelected, maxFiles = 50 }: UploadDropzon
         }}
       >
         <div style={{ 
-          background: 'rgba(99, 102, 241, 0.2)', 
+          background: 'var(--accent-faint)',
           padding: '1rem', 
           borderRadius: '50%',
           display: 'flex',
@@ -86,14 +88,15 @@ export function UploadDropzone({ onFilesSelected, maxFiles = 50 }: UploadDropzon
             Click or drag files to upload
           </h3>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem' }}>
-            Support for PDF, DOCX, TXT, CSV and more. Maximum {maxFiles} files.
+            {helperText || `Support for PDF, DOCX, TXT, CSV and more. Maximum ${maxFiles} files.`}
           </p>
         </div>
         <input 
           type="file" 
           ref={fileInputRef} 
           style={{ display: 'none' }} 
-          multiple 
+          multiple={maxFiles > 1}
+          accept={accept}
           onChange={handleFileInput}
         />
       </div>
@@ -110,7 +113,7 @@ export function UploadDropzone({ onFilesSelected, maxFiles = 50 }: UploadDropzon
                 alignItems: 'center', 
                 justifyContent: 'space-between',
                 padding: '0.75rem',
-                background: 'rgba(0,0,0,0.2)',
+                background: 'var(--panel-subtle)',
                 borderRadius: 'var(--radius-md)',
                 border: '1px solid var(--color-border)'
               }}>

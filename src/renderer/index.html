@@ -8,6 +8,24 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self' ws: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script>
+      (() => {
+        try {
+          const raw = localStorage.getItem('codex-settings');
+          const stored = raw ? JSON.parse(raw) : null;
+          const mode = stored?.state?.settings?.themeMode || 'system';
+          const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+          const resolved = mode === 'light' || mode === 'dark' ? mode : prefersDark ? 'dark' : 'light';
+          document.documentElement.dataset.theme = resolved;
+          document.documentElement.style.colorScheme = resolved;
+        } catch {
+          const resolved = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          document.documentElement.dataset.theme = resolved;
+          document.documentElement.style.colorScheme = resolved;
+        }
+      })();
+    </script>
   </head>
 
   <body>

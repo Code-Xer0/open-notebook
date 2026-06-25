@@ -1,0 +1,5 @@
+-- Migration 15 rollback: Remove Image Capsules
+
+REMOVE TABLE IF EXISTS image_capsule_revision;
+REMOVE TABLE IF EXISTS image_region;
+REMOVE TABLE IF EXISTS image_capsule;

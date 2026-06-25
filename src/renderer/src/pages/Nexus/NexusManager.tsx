@@ -1,130 +1,489 @@
-import React, { useState } from 'react';
-import { Card } from '../../components/Card';
-import { Button } from '../../components/Button';
-import { Database, Upload, FileText, Map, Users, Network, Image as ImageIcon, Headphones } from 'lucide-react';
-import { Select } from '../../components/Select';
+import React from 'react';
+import {
+  AlertTriangle,
+  AudioLines,
+  BookOpenCheck,
+  BrainCircuit,
+  CheckCircle2,
+  ChevronRight,
+  Database,
+  EyeOff,
+  FileQuestion,
+  GitBranch,
+  Layers3,
+  LockKeyhole,
+  MessageSquare,
+  Network,
+  Palette,
+  RefreshCw,
+  Search,
+  Server,
+  ShieldAlert,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
+  Tags
+} from 'lucide-react';
+import { refreshSidecarsOnce } from '../../services/sidecars';
+import { useStore } from '../../store/useStore';
+import type { ManagedSidecarStatus } from '../../../../preload/index';
+import {
+  conflictCleanupEntries as mockConflictCleanupEntries,
+  notebookQueryTests as mockNotebookQueryTests,
+  sourcePriorityStack as mockSourcePriorityStack,
+  stylePackPrimitives as mockStylePackPrimitives,
+  visualDoctrineCards as mockVisualDoctrineCards,
+  type CanonStatusTag,
+  type SpoilerBoundary
+} from './nexusOntologyMock';
+import {
+  fetchOntologyData,
+  type SourcePriorityItem,
+  type ConflictCleanupEntry,
+  type VisualDoctrineCard,
+  type NotebookQueryTest,
+  type StylePackPrimitive
+} from '../../services/ontology';
 
-export function NexusManager() {
-  const [activeTab, setActiveTab] = useState<'chapters' | 'characters' | 'locations' | 'ontology' | 'images' | 'audiobook'>('chapters');
-  const [narratorVoice, setNarratorVoice] = useState('default');
+const statusLabel: Record<ManagedSidecarStatus['phase'], string> = {
+  idle: 'Idle',
+  starting: 'Starting',
+  online: 'Online',
+  offline: 'Offline',
+  error: 'Error',
+  stopping: 'Stopping'
+};
 
-  const renderContent = () => {
-    if (activeTab === 'audiobook') {
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%' }}>
-          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Headphones /> Audiobook / Narrative Studio Prep</h3>
-          <p style={{ color: 'var(--color-text-muted)', margin: 0 }}>Configure narration for the Nexus test corpus.</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-            <div className="glass-card" style={{ padding: '1rem' }}>
-              <h4 style={{ margin: '0 0 0.5rem 0' }}>Narrator Voice Placeholder</h4>
-              <Select
-                ariaLabel="Narrator Voice"
-                value={narratorVoice}
-                onChange={setNarratorVoice}
-                options={[
-                  { value: 'default', label: 'Default Narrator (en-US-Standard-A)' },
-                  { value: 'deep-male', label: 'Deep Male Voice (en-US-Journey-D)' },
-                ]}
-              />
-            </div>
-            <div className="glass-card" style={{ padding: '1rem' }}>
-              <h4 style={{ margin: '0 0 0.5rem 0' }}>Voice Map Placeholder</h4>
-              <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', margin: '0 0 0.5rem 0' }}>Map specific characters to distinct voices.</p>
-              <Button style={{ fontSize: '0.875rem' }}>Edit Voice Map</Button>
-            </div>
-          </div>
-          <div className="glass-card" style={{ padding: '1rem' }}>
-            <h4 style={{ margin: '0 0 0.5rem 0' }}>Chapter Reader Queue</h4>
-            <ul style={{ paddingLeft: '1.5rem', margin: '0 0 1rem 0', color: 'var(--color-text-muted)' }}>
-              <li>Chapter 1 - Pending</li>
-              <li>Chapter 2 - Pending</li>
-            </ul>
-          </div>
-          <Button style={{ alignSelf: 'flex-start', background: 'var(--cyan)', color: '#000' }}>Export Audio Job Proposal</Button>
-        </div>
-      );
-    }
+const statusColor: Record<ManagedSidecarStatus['phase'], string> = {
+  idle: 'var(--text-muted)',
+  starting: 'var(--signal-warning)',
+  online: 'var(--signal-healthy)',
+  offline: 'var(--text-muted)',
+  error: 'var(--signal-error)',
+  stopping: 'var(--signal-warning)'
+};
 
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', gap: '1.5rem', color: 'var(--color-text-muted)' }}>
-        <Upload size={48} style={{ opacity: 0.5 }} />
-        <div style={{ textAlign: 'center' }}>
-          <h3 style={{ color: 'var(--color-text)', margin: '0 0 0.5rem 0' }}>Awaiting import</h3>
-          <p style={{ margin: 0 }}>No Nexus data has been imported yet for this category.</p>
-        </div>
-        
-        {activeTab === 'images' && (
-          <div style={{ display: 'flex', gap: '0.75rem', flexDirection: 'column', alignItems: 'flex-start', background: 'var(--color-surface-hover)', padding: '1.25rem', borderRadius: 'var(--radius-md)', width: '100%', maxWidth: '400px' }}>
-             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: 'var(--color-text)' }}>
-               <input type="checkbox" defaultChecked /> Run OCR (if configured)
-             </label>
-             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: 'var(--color-text)' }}>
-               <input type="checkbox" defaultChecked /> Generate Index Preview
-             </label>
-             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', color: 'var(--color-text)' }}>
-               <input type="checkbox" defaultChecked /> Show Citations in Explorer
-             </label>
-          </div>
-        )}
+const doctrineTabs = [
+  { id: 'ontology', label: 'Ontology', icon: <Network size={14} /> },
+  { id: 'visual', label: 'Visual Locks', icon: <Palette size={14} /> },
+  { id: 'queries', label: 'Queries', icon: <FileQuestion size={14} /> },
+  { id: 'export', label: 'Export', icon: <ShieldAlert size={14} /> }
+] as const;
 
-        <Button style={{ marginTop: '0.5rem' }}>Select Files to Import</Button>
-      </div>
-    );
-  };
+type DoctrineTab = typeof doctrineTabs[number]['id'];
 
-  return (
-    <div style={{ maxWidth: '900px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-      <div>
-        <h1 className="title" style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Database /> Nexus Corpus Test Mode
-        </h1>
-        <p style={{ color: 'var(--color-text-muted)' }}>
-          Import and manage testing profiles for the Nexus Corpus.
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '1rem', overflowX: 'auto' }}>
-        <button onClick={() => setActiveTab('chapters')} style={getTabStyle(activeTab === 'chapters')}>
-          <FileText size={18} /> Chapter Import
-        </button>
-        <button onClick={() => setActiveTab('characters')} style={getTabStyle(activeTab === 'characters')}>
-          <Users size={18} /> Character Sheets
-        </button>
-        <button onClick={() => setActiveTab('locations')} style={getTabStyle(activeTab === 'locations')}>
-          <Map size={18} /> Locations
-        </button>
-        <button onClick={() => setActiveTab('ontology')} style={getTabStyle(activeTab === 'ontology')}>
-          <Network size={18} /> Ontology Packages
-        </button>
-        <button onClick={() => setActiveTab('images')} style={getTabStyle(activeTab === 'images')}>
-          <ImageIcon size={18} /> Images
-        </button>
-        <button onClick={() => setActiveTab('audiobook')} style={getTabStyle(activeTab === 'audiobook')}>
-          <Headphones size={18} /> Narrative Studio
-        </button>
-      </div>
-
-      <Card>
-        {renderContent()}
-      </Card>
-    </div>
-  );
+function tagTone(status: CanonStatusTag): string {
+  if (status.includes('HARD')) return 'hard';
+  if (status.includes('AUTHOR')) return 'author';
+  if (status.includes('HIDDEN')) return 'hidden';
+  if (status.includes('FUTURE')) return 'future';
+  if (status.includes('DEPRECATED')) return 'deprecated';
+  if (status.includes('EXPERIMENTAL')) return 'experimental';
+  return 'working';
 }
 
-function getTabStyle(isActive: boolean): React.CSSProperties {
-  return {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    padding: '0.5rem 1rem',
-    border: isActive ? '1px solid var(--accent-faint)' : '1px solid transparent',
-    background: isActive ? 'var(--accent-veil)' : 'transparent',
-    color: isActive ? 'var(--accent-primary)' : 'var(--text-faint)',
-    borderRadius: 'var(--radius-sm)',
-    cursor: 'pointer',
-    fontFamily: 'var(--font-mono)',
-    fontSize: '0.85rem',
-    fontWeight: 500,
-    transition: 'var(--transition)'
-  };
+function boundaryTone(boundary: SpoilerBoundary): string {
+  if (boundary === 'Hidden truth') return 'hidden';
+  if (boundary === 'Future spoiler') return 'future';
+  if (boundary === 'Deprecated') return 'deprecated';
+  if (boundary === 'Validate later') return 'experimental';
+  return 'working';
+}
+
+export function NexusManager() {
+  const { backend, sidecars } = useStore();
+
+  const [sourcePriorityStack, setSourcePriorityStack] = React.useState<SourcePriorityItem[]>(mockSourcePriorityStack);
+  const [conflictCleanupEntries, setConflictCleanupEntries] = React.useState<ConflictCleanupEntry[]>(mockConflictCleanupEntries);
+  const [visualDoctrineCards, setVisualDoctrineCards] = React.useState<VisualDoctrineCard[]>(mockVisualDoctrineCards);
+  const [notebookQueryTests, setNotebookQueryTests] = React.useState<NotebookQueryTest[]>(mockNotebookQueryTests);
+  const [stylePackPrimitives, setStylePackPrimitives] = React.useState<StylePackPrimitive[]>(mockStylePackPrimitives);
+  const [ontologyProvenance, setOntologyProvenance] = React.useState({
+    mode: 'mock' as 'mock' | 'database' | 'mixed',
+    provenance: 'Curated Nexus ontology mock package',
+    warnings: ['Using curated mock ontology data until backend rows are available.']
+  });
+
+  const [selectedPriorityId, setSelectedPriorityId] = React.useState(mockSourcePriorityStack[0].id);
+  const [selectedConflictId, setSelectedConflictId] = React.useState(mockConflictCleanupEntries[0].id);
+  const [selectedDoctrineId, setSelectedDoctrineId] = React.useState(mockVisualDoctrineCards[0].id);
+  const [activeTab, setActiveTab] = React.useState<DoctrineTab>('visual');
+
+  React.useEffect(() => {
+    fetchOntologyData()
+      .then((data) => {
+        setOntologyProvenance({
+          mode: data.mode || 'mock',
+          provenance: data.provenance || 'Curated Nexus ontology mock package',
+          warnings: data.warnings || []
+        });
+        if (data.sourcePriorityStack?.length > 0) {
+          setSourcePriorityStack(data.sourcePriorityStack);
+          setSelectedPriorityId(data.sourcePriorityStack[0].id);
+        }
+        if (data.conflictCleanupEntries?.length > 0) {
+          setConflictCleanupEntries(data.conflictCleanupEntries);
+          setSelectedConflictId(data.conflictCleanupEntries[0].id);
+        }
+        if (data.visualDoctrineCards?.length > 0) {
+          setVisualDoctrineCards(data.visualDoctrineCards);
+          setSelectedDoctrineId(data.visualDoctrineCards[0].id);
+        }
+        if (data.notebookQueryTests?.length > 0) {
+          setNotebookQueryTests(data.notebookQueryTests);
+        }
+        if (data.stylePackPrimitives?.length > 0) {
+          setStylePackPrimitives(data.stylePackPrimitives);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  const selectedPriority = sourcePriorityStack.find((item) => item.id === selectedPriorityId) ?? sourcePriorityStack[0];
+  const selectedConflict = conflictCleanupEntries.find((entry) => entry.id === selectedConflictId) ?? conflictCleanupEntries[0];
+  const selectedDoctrine = visualDoctrineCards.find((card) => card.id === selectedDoctrineId) ?? visualDoctrineCards[0];
+  const port5055 = sidecars?.ports.find((port) => port.port === 5055);
+  const idlePhase: ManagedSidecarStatus['phase'] = 'idle';
+
+  const sidecarItems = [
+    {
+      label: 'SurrealDB',
+      value: sidecars?.surreal.message || 'Waiting for sidecar status',
+      phase: sidecars?.surreal.phase || idlePhase,
+      icon: <Database size={15} />
+    },
+    {
+      label: 'Python API',
+      value: sidecars?.backend.message || 'Waiting for sidecar status',
+      phase: sidecars?.backend.phase || idlePhase,
+      icon: <Server size={15} />
+    },
+    {
+      label: 'Port 5055',
+      value: port5055?.pid ? `${port5055.ownedByCodex ? 'Owned' : 'External'} ${port5055.processName || 'process'}:${port5055.pid}` : 'No listener reported',
+      phase: port5055?.staleExternal ? 'error' : port5055?.pid ? sidecars?.backend.phase || idlePhase : idlePhase,
+      icon: <Search size={15} />
+    },
+    {
+      label: 'Migrations',
+      value: backend.status === 'online' ? 'Backend reachable; migration detail not checked here' : 'Not verified',
+      phase: idlePhase,
+      icon: <CheckCircle2 size={15} />
+    },
+    {
+      label: 'Auth',
+      value: 'Local mode; no remote auth claim',
+      phase: idlePhase,
+      icon: <ShieldCheck size={15} />
+    }
+  ] satisfies Array<{ label: string; value: string; phase: ManagedSidecarStatus['phase']; icon: React.ReactNode }>;
+
+  return (
+    <div className="nexus-studio notebook-workspace">
+      <section className="workspace-hero nexus-hero">
+        <div>
+          <div className="workspace-kicker">Nexus v0.4 source-of-truth workspace</div>
+          <h1>Nexus Ontology Studio</h1>
+          <p>
+            Govern canon priority, hard locks, conflict cleanup, spoiler boundaries, and visual doctrine before source-grounded
+            briefings or export drafts leave the notebook.
+          </p>
+        </div>
+        <div className="workspace-actions">
+          <span className={`status-chip ${ontologyProvenance.mode === 'database' ? 'working' : 'experimental'}`} title={ontologyProvenance.warnings.join(' ') || ontologyProvenance.provenance}>
+            {ontologyProvenance.mode === 'database' ? 'Database ontology' : 'Mock ontology'}
+          </span>
+          <button className="btn" onClick={() => setActiveTab('queries')}>
+            <FileQuestion size={15} /> Compare sources
+          </button>
+          <button className="btn primary" onClick={() => setActiveTab('export')}>
+            <ShieldAlert size={15} /> Export draft
+          </button>
+        </div>
+      </section>
+
+      <section className="sidecar-strip nexus-sidecar-strip" aria-label="Sidecar readiness">
+        {sidecarItems.map((item) => (
+          <div key={item.label} className="sidecar-tile">
+            <div className="sidecar-icon" style={{ color: statusColor[item.phase] }}>
+              {item.icon}
+            </div>
+            <div>
+              <span>{item.label}</span>
+              <strong style={{ color: statusColor[item.phase] }}>{statusLabel[item.phase]}</strong>
+              <small title={item.value}>{item.value}</small>
+            </div>
+          </div>
+        ))}
+        <button className="btn sidecar-refresh" onClick={() => void refreshSidecarsOnce()} title="Refresh sidecar status">
+          <RefreshCw size={14} />
+        </button>
+      </section>
+
+      <div className="nexus-studio-grid">
+        <section className="workspace-panel nexus-panel priority-stack-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Canon Priority Stack</h2>
+              <p>Highest-priority package rules guard every older draft and generated note.</p>
+            </div>
+            <LockKeyhole size={17} />
+          </div>
+
+          <div className="priority-stack" role="list">
+            {sourcePriorityStack.map((item, index) => (
+              <button
+                key={item.id}
+                className={`priority-row ${item.id === selectedPriority.id ? 'selected' : ''}`}
+                onClick={() => setSelectedPriorityId(item.id)}
+              >
+                <span className="priority-index">{index + 1}</span>
+                <span className="priority-copy">
+                  <strong>{item.level}</strong>
+                  <small>{item.title}</small>
+                </span>
+                <span className={`status-chip ${tagTone(item.status)}`}>{item.status}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="priority-caution">
+            <AlertTriangle size={15} />
+            <span>Deprecated or experimental notes cannot override selected hard locks.</span>
+          </div>
+
+          <div className="priority-detail">
+            <span className="citation-chip">{selectedPriority.citation}</span>
+            <p>{selectedPriority.detail}</p>
+          </div>
+        </section>
+
+        <section className="workspace-panel nexus-panel cleanup-board-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Conflict Cleanup Board</h2>
+              <p>Risky drift is paired with the current lock before it can enter generated output.</p>
+            </div>
+            <GitBranch size={17} />
+          </div>
+
+          <div className="cleanup-table" role="table" aria-label="Nexus conflict cleanup">
+            <div className="cleanup-head" role="row">
+              <span>Risky drift</span>
+              <span>Correct lock</span>
+              <span>Boundary</span>
+            </div>
+            {conflictCleanupEntries.map((entry) => (
+              <button
+                key={entry.id}
+                className={`cleanup-row ${entry.id === selectedConflict.id ? 'selected' : ''}`}
+                onClick={() => setSelectedConflictId(entry.id)}
+                role="row"
+              >
+                <span className="cleanup-drift">{entry.drift}</span>
+                <span className="cleanup-lock">{entry.lock}</span>
+                <span className="cleanup-tags">
+                  <span className={`status-chip ${tagTone(entry.status)}`}>{entry.status}</span>
+                  <span className={`boundary-chip ${boundaryTone(entry.boundary)}`}>{entry.boundary}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="workspace-panel nexus-panel visual-doctrine-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Visual Doctrine Canvas</h2>
+              <p>Production style remains grounded in canon, not prompt drift.</p>
+            </div>
+            <SlidersHorizontal size={17} />
+          </div>
+
+          <div className="doctrine-tabs" role="tablist" aria-label="Nexus ontology modes">
+            {doctrineTabs.map((tab) => (
+              <button
+                key={tab.id}
+                className={activeTab === tab.id ? 'selected' : ''}
+                onClick={() => setActiveTab(tab.id)}
+                role="tab"
+                aria-selected={activeTab === tab.id}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === 'visual' && (
+            <div className="visual-doctrine-body">
+              <div className="doctrine-card-list">
+                {visualDoctrineCards.map((card) => (
+                  <button
+                    key={card.id}
+                    className={`doctrine-card ${card.id === selectedDoctrine.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedDoctrineId(card.id)}
+                  >
+                    <span className={`status-chip ${tagTone(card.status)}`}>{card.status}</span>
+                    <strong>{card.title}</strong>
+                    <small>{card.tokens.join(' / ')}</small>
+                  </button>
+                ))}
+              </div>
+
+              <div className="doctrine-preview">
+                <div className="doctrine-preview-header">
+                  <div>
+                    <span className={`status-chip ${tagTone(selectedDoctrine.status)}`}>{selectedDoctrine.status}</span>
+                    <h3>{selectedDoctrine.title}</h3>
+                  </div>
+                  <Palette size={18} />
+                </div>
+                <p>{selectedDoctrine.summary}</p>
+                <div className="swatch-row" aria-label="Doctrine swatches">
+                  {selectedDoctrine.swatches.map((swatch) => (
+                    <span key={swatch} style={{ background: swatch }} title={swatch} />
+                  ))}
+                </div>
+                <div className="token-grid">
+                  {selectedDoctrine.tokens.map((token) => (
+                    <span key={token}>
+                      <Tags size={13} />
+                      {token}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'ontology' && (
+            <div className="ontology-inspector">
+              <span className={`status-chip ${tagTone(selectedConflict.status)}`}>{selectedConflict.status}</span>
+              <h3>{selectedConflict.lock}</h3>
+              <p>{selectedConflict.drift}</p>
+              <div className="citation-row">
+                {selectedConflict.citations.map((citation) => (
+                  <span key={citation} className="citation-chip">{citation}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'queries' && (
+            <div className="query-test-list compact">
+              {notebookQueryTests.map((test) => (
+                <button key={test.id} onClick={() => setActiveTab('queries')}>
+                  <FileQuestion size={14} />
+                  <span>{test.query}</span>
+                  <strong>{test.readiness}</strong>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {activeTab === 'export' && (
+            <div className="export-safety-list">
+              <div><ShieldAlert size={15} /> Attribution required before public reuse.</div>
+              <div><EyeOff size={15} /> Hidden truth and future spoiler blocks stay fenced.</div>
+              <div><BookOpenCheck size={15} /> BBCode/CSS output remains a draft until source review.</div>
+            </div>
+          )}
+        </section>
+
+        <aside className="workspace-panel nexus-panel nexus-ask-rail">
+          <div className="panel-heading">
+            <div>
+              <h2>Ask this notebook</h2>
+              <p>Grounded answer preview with citations and spoiler warnings.</p>
+            </div>
+            <MessageSquare size={17} />
+          </div>
+
+          <div className="ask-question">
+            What is the Cain/Oberon correction?
+          </div>
+
+          <div className="grounded-answer">
+            <span className={`status-chip ${tagTone(selectedConflict.status)}`}>{selectedConflict.status}</span>
+            <p>
+              Cain and Oberon must stay visually firewalled. The bald breach-coded hammer figure is Oberon; Cain is the
+              silver-haired gravity/stabilization command figure.
+            </p>
+            <div className="citation-row">
+              {selectedConflict.citations.map((citation) => (
+                <span key={citation} className="citation-chip">{citation}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="unresolved-box">
+            <BrainCircuit size={16} />
+            <div>
+              <strong>Unresolved questions</strong>
+              <span>Confirm exact faction-archangel mapping for Insomnia and Ariel before export.</span>
+            </div>
+          </div>
+
+          <div className="grounded-checklist">
+            <div><LockKeyhole size={14} /> Hard-lock source checked</div>
+            <div><EyeOff size={14} /> Hidden-truth boundary visible</div>
+            <div><AlertTriangle size={14} /> Deprecated phrasing blocked</div>
+          </div>
+
+          <div className="ask-actions">
+            <button className="btn" onClick={() => setActiveTab('queries')}>
+              <Sparkles size={14} /> Briefing
+            </button>
+            <button className="btn" onClick={() => setActiveTab('queries')}>
+              <AudioLines size={14} /> Audio Overview
+            </button>
+            <button className="btn" onClick={() => setActiveTab('export')}>
+              <ShieldAlert size={14} /> Export Draft
+            </button>
+          </div>
+        </aside>
+
+        <section className="workspace-panel nexus-panel query-tests-panel">
+          <div className="panel-heading compact-heading">
+            <div>
+              <h2>NotebookLM Query Tests</h2>
+              <p>Validation prompts are queued for source checks, not pre-marked as passing.</p>
+            </div>
+            <FileQuestion size={17} />
+          </div>
+          <div className="query-chip-row">
+            {notebookQueryTests.map((test) => (
+              <button key={test.id} onClick={() => setActiveTab('queries')}>
+                <span>{test.query}</span>
+                <strong>{test.readiness}</strong>
+                <small>{test.citation}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="workspace-panel nexus-panel stylepack-tray-panel">
+          <div className="panel-heading compact-heading">
+            <div>
+              <h2>StylePack / Prefab Tray</h2>
+              <p>Visual primitives stay secondary to ontology truth.</p>
+            </div>
+            <Layers3 size={17} />
+          </div>
+          <div className="stylepack-tray">
+            {stylePackPrimitives.map((primitive) => (
+              <button key={primitive.id} onClick={() => setActiveTab('visual')}>
+                <span className={`primitive-icon ${tagTone(primitive.status)}`}>
+                  <ChevronRight size={13} />
+                </span>
+                <strong>{primitive.title}</strong>
+                <small>{primitive.role}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
 }

@@ -10,7 +10,7 @@ interface TelemetryGraphProps {
 }
 
 export function TelemetryGraph({ data, color = 'var(--accent-primary)', height = 40, width = '100%', min = 0, max = 100 }: TelemetryGraphProps) {
-  if (!data || data.length === 0) return <div style={{ height, width, background: 'rgba(0,0,0,0.2)' }} />;
+  if (!data || data.length === 0) return <div style={{ height, width, background: 'var(--panel-subtle)' }} />;
 
   const range = max - min;
   

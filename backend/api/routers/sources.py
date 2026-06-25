@@ -14,6 +14,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, Response
 from loguru import logger
+from pydantic import BaseModel
 from surreal_commands import execute_command_sync, submit_command
 
 from api.command_service import CommandService
@@ -28,7 +29,16 @@ from api.models import (
     SourceStatusResponse,
     SourceUpdate,
 )
-from commands.source_commands import SourceProcessingInput
+try:
+    from commands.source_commands import SourceProcessingInput
+except ModuleNotFoundError:
+    class SourceProcessingInput(BaseModel):
+        source_id: str
+        content_state: dict[str, Any]
+        notebook_ids: Optional[List[str]] = None
+        transformations: Optional[List[str]] = None
+        embed: bool = True
+
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Asset, Notebook, Source
@@ -388,6 +398,29 @@ async def create_source(
                 raise HTTPException(
                     status_code=404, detail=f"Transformation {trans_id} not found"
                 )
+
+        if source_data.type == "text" and not source_data.embed and not transformation_ids:
+            source = Source(
+                title=source_data.title or "Text source",
+                topics=[],
+                full_text=source_data.content,
+            )
+            await source.save()
+
+            for notebook_id in source_data.notebooks or []:
+                await source.add_to_notebook(notebook_id)
+
+            return SourceResponse(
+                id=source.id or "",
+                title=source.title,
+                topics=source.topics or [],
+                asset=None,
+                full_text=source.full_text,
+                embedded=False,
+                embedded_chunks=0,
+                created=str(source.created),
+                updated=str(source.updated),
+            )
 
         # Branch based on processing mode
         if source_data.async_processing:

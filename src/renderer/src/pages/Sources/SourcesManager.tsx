@@ -3,6 +3,7 @@ import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { UploadDropzone } from './UploadDropzone';
+import { ImageCapsuleWizard } from './ImageCapsuleWizard';
 import { Link as LinkIcon, FileText, Settings, Database, BrainCircuit, Loader2, Image as ImageIcon, Video, Camera, ScanText } from 'lucide-react';
 
 type SourceType = 'upload' | 'image' | 'video' | 'scanned-pdf' | 'link' | 'text';
@@ -21,15 +22,18 @@ export function SourcesManager() {
   const [shouldEmbed, setShouldEmbed] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const handleSubmit = async () => {
     setIsProcessing(true);
     setError(null);
+    setSuccess(null);
     try {
       if (['upload', 'image', 'video', 'scanned-pdf'].includes(sourceType)) {
         for (const file of selectedFiles) {
           const formData = new FormData();
           formData.append('file', file);
+          formData.append('type', 'upload');
           formData.append('parse', shouldParse.toString());
           formData.append('embed', shouldEmbed.toString());
           // Ideally append lane specific flags here based on sourceType
@@ -58,7 +62,7 @@ export function SourcesManager() {
           });
         }
       }
-      alert('Sources added successfully!');
+      setSuccess('Sources submitted to the local backend.');
       // Reset form
       setUrls('');
       setTextContent('');
@@ -142,34 +146,21 @@ export function SourcesManager() {
           )}
 
           {sourceType === 'image' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <UploadDropzone onFilesSelected={setSelectedFiles} />
-              <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--color-border)' }}>
-                <h4 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <BrainCircuit size={16} color="var(--color-primary)" /> OCR / Vision Analysis
-                </h4>
-                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '1rem' }}>
-                  Image content will be processed using available Vision models.
-                </p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ef4444', fontSize: '0.875rem', fontWeight: 500 }}>
-                  <span>Status:</span> <span>Not configured (Vision backend unavailable)</span>
-                </div>
-              </div>
-            </div>
+            <ImageCapsuleWizard />
           )}
 
           {sourceType === 'video' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <UploadDropzone onFilesSelected={setSelectedFiles} />
-              <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--color-border)' }}>
+              <div style={{ padding: '1rem', background: 'var(--panel-subtle)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--color-border)' }}>
                 <h4 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <Camera size={16} color="var(--color-primary)" /> Video Frame Extraction & Metadata
                 </h4>
                 <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '1rem' }}>
-                  Extract keyframes and audio transcripts from video files for multimodal embeddings.
+                  Video frame extraction is scaffolded and remains unavailable until the backend exposes a verified pipeline.
                 </p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#ef4444', fontSize: '0.875rem', fontWeight: 500 }}>
-                  <span>Status:</span> <span>Not configured (Frame extraction pipeline offline)</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--signal-warning)', fontSize: '0.875rem', fontWeight: 500 }}>
+                  <span>Status:</span> <span>Not wired</span>
                 </div>
               </div>
             </div>
@@ -178,7 +169,7 @@ export function SourcesManager() {
           {sourceType === 'scanned-pdf' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <UploadDropzone onFilesSelected={setSelectedFiles} />
-              <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--color-border)' }}>
+              <div style={{ padding: '1rem', background: 'var(--panel-subtle)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--color-border)' }}>
                 <h4 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <ScanText size={16} color="var(--color-primary)" /> Optical Character Recognition (OCR)
                 </h4>
@@ -193,7 +184,7 @@ export function SourcesManager() {
                     <input type="checkbox" /> Force manual OCR run
                   </label>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#eab308', fontSize: '0.875rem', fontWeight: 500 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--signal-warning)', fontSize: '0.875rem', fontWeight: 500 }}>
                   <span>Status:</span> <span>OCR unavailable (Waiting for Tesseract/Vision plugin)</span>
                 </div>
               </div>
@@ -247,8 +238,8 @@ export function SourcesManager() {
                     padding: '1rem',
                     borderRadius: 'var(--radius-md)',
                     border: '1px solid var(--color-border)',
-                    background: 'rgba(0,0,0,0.2)',
-                    color: 'white',
+                    background: 'var(--panel-subtle)',
+                    color: 'var(--color-text)',
                     resize: 'vertical',
                     outline: 'none'
                   }}
@@ -258,72 +249,82 @@ export function SourcesManager() {
           )}
         </div>
 
-        {/* Processing Options */}
-        <div style={{ background: 'rgba(0,0,0,0.2)', padding: '1.5rem', borderRadius: 'var(--radius-md)', marginBottom: '2rem' }}>
-          <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Settings size={18} color="var(--color-text-muted)" />
-            Processing Options
-          </h3>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', cursor: 'pointer' }}>
-              <input 
-                type="checkbox" 
-                checked={shouldParse} 
-                onChange={(e) => setShouldParse(e.target.checked)}
-                style={{ marginTop: '0.25rem', accentColor: 'var(--color-primary)', width: '1rem', height: '1rem' }}
-              />
-              <div>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, marginBottom: '0.25rem' }}>
-                  <Database size={16} color="var(--color-primary)" />
-                  Parse Document Structure
-                </span>
-                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
-                  Extract headings, paragraphs, and metadata automatically.
-                </p>
-              </div>
-            </label>
-            
-            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', cursor: 'pointer' }}>
-              <input 
-                type="checkbox" 
-                checked={shouldEmbed} 
-                onChange={(e) => setShouldEmbed(e.target.checked)}
-                style={{ marginTop: '0.25rem', accentColor: 'var(--color-primary)', width: '1rem', height: '1rem' }}
-              />
-              <div>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, marginBottom: '0.25rem' }}>
-                  <BrainCircuit size={16} color="var(--color-primary)" />
-                  Generate Embeddings (Vectorize)
-                </span>
-                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
-                  Create vector embeddings for semantic search and AI comprehension.
-                </p>
-              </div>
-            </label>
-          </div>
-        </div>
+        {sourceType !== 'image' && (
+          <>
+            {/* Processing Options */}
+            <div style={{ background: 'var(--panel-subtle)', padding: '1.5rem', borderRadius: 'var(--radius-md)', marginBottom: '2rem' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Settings size={18} color="var(--color-text-muted)" />
+                Processing Options
+              </h3>
 
-        {error && (
-          <div style={{ color: '#ef4444', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }}>
-            {error}
-          </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={shouldParse}
+                    onChange={(e) => setShouldParse(e.target.checked)}
+                    style={{ marginTop: '0.25rem', accentColor: 'var(--color-primary)', width: '1rem', height: '1rem' }}
+                  />
+                  <div>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, marginBottom: '0.25rem' }}>
+                      <Database size={16} color="var(--color-primary)" />
+                      Parse Document Structure
+                    </span>
+                    <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+                      Extract headings, paragraphs, and metadata automatically.
+                    </p>
+                  </div>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={shouldEmbed}
+                    onChange={(e) => setShouldEmbed(e.target.checked)}
+                    style={{ marginTop: '0.25rem', accentColor: 'var(--color-primary)', width: '1rem', height: '1rem' }}
+                  />
+                  <div>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 500, marginBottom: '0.25rem' }}>
+                      <BrainCircuit size={16} color="var(--color-primary)" />
+                      Generate Embeddings (Vectorize)
+                    </span>
+                    <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+                      Create vector embeddings for semantic search and AI comprehension.
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {error && (
+              <div style={{ color: 'var(--signal-error)', padding: '1rem', background: 'var(--danger-veil)', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }}>
+                {error}
+              </div>
+            )}
+
+            {success && (
+              <div style={{ color: 'var(--signal-healthy)', padding: '1rem', background: 'color-mix(in srgb, var(--signal-healthy) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--signal-healthy) 24%, transparent)', borderRadius: 'var(--radius-md)', marginBottom: '1rem' }}>
+                {success}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+              <Button disabled={isProcessing} onClick={() => { setUrls(''); setTextContent(''); setTextTitle(''); setSelectedFiles([]); setError(null); setSuccess(null); }} className="bg-transparent" style={{ background: 'transparent', border: '1px solid var(--color-border)' }}>
+                Cancel
+              </Button>
+              <Button disabled={!isFormValid() || isProcessing} onClick={handleSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                {isProcessing ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                    Processing...
+                  </>
+                ) : 'Add Sources'}
+              </Button>
+            </div>
+          </>
         )}
-
-        {/* Actions */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-          <Button disabled={isProcessing} className="bg-transparent" style={{ background: 'transparent', border: '1px solid var(--color-border)' }}>
-            Cancel
-          </Button>
-          <Button disabled={!isFormValid() || isProcessing} onClick={handleSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {isProcessing ? (
-              <>
-                <Loader2 size={16} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
-                Processing...
-              </>
-            ) : 'Add Sources'}
-          </Button>
-        </div>
       </Card>
       
       <style>{`

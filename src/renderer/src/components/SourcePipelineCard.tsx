@@ -8,31 +8,33 @@ interface PipelineStage {
   id: string;
   label: string;
   icon: React.ReactNode;
-  status: 'idle' | 'processing' | 'healthy' | 'warning' | 'error';
+  status: 'idle' | 'processing' | 'observed' | 'warning' | 'error';
   value?: string | number;
 }
 
 export function SourcePipelineCard() {
   const { telemetry } = useStore();
   
-  const isOnline = telemetry.sourceHealth.connected !== 'Unknown';
+  const hasTelemetry = telemetry.sourceHealth.connected !== 'Unknown';
+  const hasCompleted = typeof telemetry.ingestionHealth.completed === 'number';
+  const hasRetrievalLatency = telemetry.retrievalHealth.latency !== 'Unknown';
 
   const stages: PipelineStage[] = [
-    { 
-      id: 'intake', label: 'Intake', icon: <DownloadCloud size={16} />, 
-      status: isOnline ? 'idle' : 'idle', 
-      value: isOnline ? (typeof telemetry.ingestionHealth.queued === 'number' && telemetry.ingestionHealth.queued > 0 ? telemetry.ingestionHealth.queued : 'Idle') : 'Offline'
+    {
+      id: 'intake', label: 'Intake', icon: <DownloadCloud size={16} />,
+      status: hasTelemetry ? 'idle' : 'warning',
+      value: hasTelemetry ? (typeof telemetry.ingestionHealth.queued === 'number' && telemetry.ingestionHealth.queued > 0 ? telemetry.ingestionHealth.queued : 'Idle') : 'Unknown'
     },
-    { 
-      id: 'parse', label: 'Parse', icon: <FileText size={16} />, 
-      status: isOnline ? (typeof telemetry.ingestionHealth.parsing === 'number' && telemetry.ingestionHealth.parsing > 0 ? 'processing' : 'idle') : 'idle',
-      value: isOnline ? telemetry.ingestionHealth.parsing : 'Offline' 
+    {
+      id: 'parse', label: 'Parse', icon: <FileText size={16} />,
+      status: hasTelemetry ? (typeof telemetry.ingestionHealth.parsing === 'number' && telemetry.ingestionHealth.parsing > 0 ? 'processing' : 'idle') : 'warning',
+      value: hasTelemetry ? telemetry.ingestionHealth.parsing : 'Unknown'
     },
-    { id: 'chunk', label: 'Chunk', icon: <Scissors size={16} />, status: 'idle', value: isOnline ? 'Idle' : 'Offline' },
-    { id: 'embed', label: 'Embed', icon: <Cpu size={16} />, status: 'idle', value: isOnline ? 'Idle' : 'Offline' },
-    { id: 'index', label: 'Index', icon: <Network size={16} />, status: isOnline ? 'healthy' : 'idle', value: isOnline ? telemetry.ingestionHealth.completed : 'Offline' },
-    { id: 'retrieve', label: 'Retrieve', icon: <Search size={16} />, status: isOnline ? 'healthy' : 'idle', value: isOnline ? telemetry.retrievalHealth.latency : 'Offline' },
-    { id: 'synthesize', label: 'Synthesize', icon: <PenTool size={16} />, status: 'idle', value: isOnline ? 'Idle' : 'Offline' }
+    { id: 'chunk', label: 'Chunk', icon: <Scissors size={16} />, status: hasTelemetry ? 'idle' : 'warning', value: hasTelemetry ? 'Idle' : 'Unknown' },
+    { id: 'embed', label: 'Embed', icon: <Cpu size={16} />, status: hasTelemetry ? 'idle' : 'warning', value: hasTelemetry ? 'Idle' : 'Unknown' },
+    { id: 'index', label: 'Index', icon: <Network size={16} />, status: hasCompleted ? 'observed' : 'warning', value: hasCompleted ? telemetry.ingestionHealth.completed : 'Unknown' },
+    { id: 'retrieve', label: 'Retrieve', icon: <Search size={16} />, status: hasRetrievalLatency ? 'observed' : 'warning', value: hasRetrievalLatency ? telemetry.retrievalHealth.latency : 'Unknown' },
+    { id: 'synthesize', label: 'Synthesize', icon: <PenTool size={16} />, status: hasTelemetry ? 'idle' : 'warning', value: hasTelemetry ? 'Idle' : 'Unknown' }
   ];
 
   return (
@@ -41,8 +43,8 @@ export function SourcePipelineCard() {
         <h3 style={{ fontSize: 'var(--font-size-sm)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, color: 'var(--text-strong)' }}>
           Ingestion & Synthesis Pipeline
         </h3>
-        <span style={{ fontSize: 'var(--font-size-xs)', color: isOnline ? 'var(--signal-healthy)' : 'var(--text-muted)', fontWeight: 600 }}>
-          {isOnline ? 'PIPELINE ACTIVE' : 'PIPELINE OFFLINE'}
+        <span style={{ fontSize: 'var(--font-size-xs)', color: hasTelemetry ? 'var(--accent-primary)' : 'var(--text-muted)', fontWeight: 600 }}>
+          {hasTelemetry ? 'TELEMETRY MEASURED' : 'TELEMETRY UNKNOWN'}
         </span>
       </div>
 
@@ -52,7 +54,7 @@ export function SourcePipelineCard() {
 
         {stages.map((stage) => {
           const color = 
-            stage.status === 'healthy' ? 'var(--signal-healthy)' :
+            stage.status === 'observed' ? 'var(--accent-primary)' :
             stage.status === 'processing' ? 'var(--signal-processing)' :
             stage.status === 'warning' ? 'var(--signal-warning)' :
             stage.status === 'error' ? 'var(--signal-error)' :

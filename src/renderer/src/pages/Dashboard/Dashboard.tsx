@@ -1,136 +1,346 @@
 import React from 'react';
-import { Database, BookOpen, Layers, Zap, Activity, Headphones } from 'lucide-react';
-import { CollapsiblePane } from '../../components/CollapsiblePane';
-import { NotebookList } from '../Notebooks/NotebookList';
-import { Card } from '../../components/Card';
-import { SourcePipelineCard } from '../../components/SourcePipelineCard';
-import { KnowledgeHealthScore } from '../../components/KnowledgeHealthScore';
-import { KnowledgeAlerts } from '../../components/KnowledgeAlerts';
-
-
+import { useNavigate } from 'react-router-dom';
+import {
+  AudioLines,
+  BookOpen,
+  CheckCircle2,
+  Database,
+  FileText,
+  MessageSquare,
+  Plus,
+  Quote,
+  RefreshCw,
+  Search,
+  Server,
+  ShieldCheck,
+  Sparkles,
+  Upload,
+  XCircle
+} from 'lucide-react';
+import { api } from '../../services/api';
+import { restartSidecars, refreshSidecarsOnce } from '../../services/sidecars';
 import { useStore } from '../../store/useStore';
+import type { ManagedSidecarStatus } from '../../../../preload/index';
+
+type NotebookRecord = {
+  id?: string;
+  name?: string;
+  title?: string;
+  description?: string;
+  notes?: unknown[];
+  sources?: unknown[];
+};
+
+type SourceRecord = {
+  id?: string;
+  title?: string;
+  name?: string;
+  filename?: string;
+  type?: string;
+  status?: string | null;
+};
+
+const statusLabel: Record<ManagedSidecarStatus['phase'], string> = {
+  idle: 'Idle',
+  starting: 'Starting',
+  online: 'Online',
+  offline: 'Offline',
+  error: 'Error',
+  stopping: 'Stopping'
+};
+
+const statusColor: Record<ManagedSidecarStatus['phase'], string> = {
+  idle: 'var(--text-muted)',
+  starting: 'var(--signal-warning)',
+  online: 'var(--signal-healthy)',
+  offline: 'var(--text-muted)',
+  error: 'var(--signal-error)',
+  stopping: 'var(--signal-warning)'
+};
+
+function valueText(value: number | string | 'Unknown'): string {
+  return value === 'Unknown' ? 'Unknown' : String(value);
+}
+
+function pickName(item: NotebookRecord | SourceRecord, fallback: string): string {
+  return item.title || item.name || ('filename' in item ? item.filename : undefined) || fallback;
+}
 
 export function Dashboard() {
-  // Telemetry + connectivity are populated by the global backend monitor
-  // (services/health.ts, started in App). The Dashboard is presentational: it
-  // renders whatever honest state the store holds (real values, 'Unknown', or
-  // Offline) and never fabricates metrics.
-  const { telemetry, backend } = useStore();
+  const navigate = useNavigate();
+  const { backend, telemetry, sidecars } = useStore();
+  const [notebooks, setNotebooks] = React.useState<NotebookRecord[]>([]);
+  const [sources, setSources] = React.useState<SourceRecord[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [workspaceError, setWorkspaceError] = React.useState<string | null>(null);
+  const [prompt, setPrompt] = React.useState('');
 
-  const telemetryCards = [
-    {
-      title: 'Source Health',
-      icon: <Database size={14} color="var(--accent-primary)" />,
-      stats: [
-        { label: 'Connected', value: telemetry.sourceHealth.connected, color: telemetry.sourceHealth.connected === 'Unknown' ? 'var(--text-muted)' : 'var(--signal-healthy)' },
-        { label: 'Failed', value: telemetry.sourceHealth.failed, color: telemetry.sourceHealth.failed === 'Unknown' ? 'var(--text-muted)' : 'var(--signal-error)' },
-        { label: 'Pending', value: telemetry.sourceHealth.pending, color: telemetry.sourceHealth.pending === 'Unknown' ? 'var(--text-muted)' : 'var(--signal-warning)' }
-      ]
-    },
-    {
-      title: 'Knowledge Coverage',
-      icon: <BookOpen size={14} color="var(--accent-primary)" />,
-      stats: [
-        { label: 'Citation Coverage', value: telemetry.knowledgeCoverage.citationCoverage, color: telemetry.knowledgeCoverage.citationCoverage === 'Unknown' ? 'var(--text-muted)' : 'var(--text-main)' },
-        { label: 'Orphan Content', value: telemetry.knowledgeCoverage.orphanContent, color: telemetry.knowledgeCoverage.orphanContent === 'Unknown' ? 'var(--text-muted)' : 'var(--signal-warning)' },
-        { label: 'Unresolved Entities', value: telemetry.knowledgeCoverage.unresolvedEntities, color: telemetry.knowledgeCoverage.unresolvedEntities === 'Unknown' ? 'var(--text-muted)' : 'var(--signal-error)' }
-      ]
-    },
-    {
-      title: 'Retrieval Health',
-      icon: <Zap size={14} color="var(--accent-primary)" />,
-      stats: [
-        { label: 'Retrieval Latency', value: telemetry.retrievalHealth.latency, color: telemetry.retrievalHealth.latency === 'Unknown' ? 'var(--text-muted)' : 'var(--signal-healthy)' },
-        { label: 'Failed Retrievals', value: telemetry.retrievalHealth.failed, color: telemetry.retrievalHealth.failed === 'Unknown' ? 'var(--text-muted)' : 'var(--signal-healthy)' },
-        { label: 'Context Depth', value: telemetry.retrievalHealth.contextDepth, color: telemetry.retrievalHealth.contextDepth === 'Unknown' ? 'var(--text-muted)' : 'var(--text-main)' }
-      ]
-    },
-    {
-      title: 'Ingestion Health',
-      icon: <Layers size={14} color="var(--accent-primary)" />,
-      stats: [
-        { label: 'Queued', value: telemetry.ingestionHealth.queued, color: telemetry.ingestionHealth.queued === 'Unknown' ? 'var(--text-muted)' : 'var(--text-main)' },
-        { label: 'Parsing', value: telemetry.ingestionHealth.parsing, color: telemetry.ingestionHealth.parsing === 'Unknown' ? 'var(--text-muted)' : 'var(--accent-primary)' },
-        { label: 'Failed', value: telemetry.ingestionHealth.failed, color: telemetry.ingestionHealth.failed === 'Unknown' ? 'var(--text-muted)' : 'var(--signal-error)' },
-        { label: 'Completed', value: telemetry.ingestionHealth.completed, color: telemetry.ingestionHealth.completed === 'Unknown' ? 'var(--text-muted)' : 'var(--signal-healthy)' }
-      ]
-    },
-    {
-      title: 'Narrative Index',
-      icon: <Activity size={14} color="var(--accent-primary)" />,
-      stats: [
-        { label: 'Characters', value: telemetry.narrativeIndex.characters, color: telemetry.narrativeIndex.characters === 'Unknown' ? 'var(--text-muted)' : 'var(--text-main)' },
-        { label: 'Locations', value: telemetry.narrativeIndex.locations, color: telemetry.narrativeIndex.locations === 'Unknown' ? 'var(--text-muted)' : 'var(--text-main)' },
-        { label: 'Factions', value: telemetry.narrativeIndex.factions, color: telemetry.narrativeIndex.factions === 'Unknown' ? 'var(--text-muted)' : 'var(--text-main)' },
-        { label: 'Timelines', value: telemetry.narrativeIndex.timelines, color: telemetry.narrativeIndex.timelines === 'Unknown' ? 'var(--text-muted)' : 'var(--text-main)' }
-      ]
-    },
-    {
-      title: 'Studio Queue',
-      icon: <Headphones size={14} color="var(--accent-primary)" />,
-      stats: [
-        { label: 'Audiobook Jobs', value: telemetry.studioQueue.audiobookJobs, color: telemetry.studioQueue.audiobookJobs === 'Unknown' ? 'var(--text-muted)' : 'var(--accent-primary)' },
-        { label: 'Report Jobs', value: telemetry.studioQueue.reportJobs, color: telemetry.studioQueue.reportJobs === 'Unknown' ? 'var(--text-muted)' : 'var(--text-main)' },
-        { label: 'Export Jobs', value: telemetry.studioQueue.exportJobs, color: telemetry.studioQueue.exportJobs === 'Unknown' ? 'var(--text-muted)' : 'var(--text-muted)' }
-      ]
+  const selectedNotebook = notebooks[0] ?? null;
+  const isOnline = backend.status === 'online';
+  const port5055 = sidecars?.ports.find((p) => p.port === 5055);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadWorkspace() {
+      if (!isOnline) {
+        setNotebooks([]);
+        setSources([]);
+        setWorkspaceError(null);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const [notebookData, sourceData] = await Promise.all([
+          api.notebooks.list(),
+          api.sources.list()
+        ]);
+        if (cancelled) return;
+        setNotebooks(Array.isArray(notebookData) ? notebookData : []);
+        setSources(Array.isArray(sourceData) ? sourceData : []);
+        setWorkspaceError(null);
+      } catch (err: any) {
+        if (cancelled) return;
+        setWorkspaceError(err?.message || 'Failed to load notebook workspace');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-  ];
+
+    void loadWorkspace();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnline]);
+
+  const sidecarItems = [
+    {
+      label: 'SurrealDB',
+      value: sidecars?.surreal.message || 'Waiting for sidecar status',
+      phase: sidecars?.surreal.phase || 'idle',
+      icon: <Database size={15} />
+    },
+    {
+      label: 'Python API',
+      value: sidecars?.backend.message || 'Waiting for sidecar status',
+      phase: sidecars?.backend.phase || 'idle',
+      icon: <Server size={15} />
+    },
+    {
+      label: 'Port 5055',
+      value: port5055?.pid
+        ? `${port5055.ownedByCodex ? 'Owned' : 'External'} ${port5055.processName || 'process'}:${port5055.pid}`
+        : 'No listener',
+      phase: port5055?.staleExternal ? 'error' : sidecars?.backend.phase || 'idle',
+      icon: <Search size={15} />
+    },
+    {
+      label: 'Migrations',
+      value: isOnline ? 'Backend reachable; migration detail not checked here' : 'Not verified',
+      phase: 'idle',
+      status: 'Not verified',
+      icon: <CheckCircle2 size={15} />
+    },
+    {
+      label: 'Auth',
+      value: 'Local mode; no remote auth claim',
+      phase: 'idle',
+      status: 'Local only',
+      icon: <ShieldCheck size={15} />
+    }
+  ] satisfies Array<{ label: string; value: string; phase: ManagedSidecarStatus['phase']; status?: string; icon: React.ReactNode }>;
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 'var(--pad-lg)', height: '100%' }}>
-      
-      {/* Left Column: Telemetry & Notebooks */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--pad-lg)', overflowY: 'auto', paddingRight: '4px' }}>
-        
-        {/* Source Pipeline Topology */}
-        <SourcePipelineCard />
-
-        {/* Telemetry Cards Grid */}
-        <div className="tele-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--pad-md)' }}>
-          {telemetryCards.map((card, idx) => (
-            <Card key={idx} style={{ padding: 'var(--pad-md)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-faint)' }}>{card.title}</span>
-                {card.icon}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {card.stats.map((stat, sIdx) => (
-                  <div key={sIdx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{stat.label}</span>
-                    <span style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: stat.color }}>{stat.value}</span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          ))}
+    <div className="notebook-workspace">
+      <section className="workspace-hero">
+        <div>
+          <div className="workspace-kicker">Local NotebookLM workspace</div>
+          <h1>Notebook workspace</h1>
+          <p>
+            Build a source-grounded notebook, ask against local context, and keep citations visible while CODEX brings the sidecars online underneath.
+          </p>
         </div>
+        <div className="workspace-actions">
+          <button className="btn" onClick={() => navigate('/sources')}>
+            <Upload size={15} /> Add sources
+          </button>
+          <button className="btn primary" onClick={() => navigate('/chat')}>
+            <MessageSquare size={15} /> Ask notebook
+          </button>
+        </div>
+      </section>
 
-        {/* Notebooks Section */}
-        <CollapsiblePane title="Managed Notebooks" icon={<BookOpen size={16} />} defaultExpanded={true}>
-          <div style={{ margin: '-16px' }}>
-            <NotebookList />
+      <section className="sidecar-strip" aria-label="Sidecar readiness">
+        {sidecarItems.map((item) => (
+          <div key={item.label} className="sidecar-tile">
+            <div className="sidecar-icon" style={{ color: statusColor[item.phase] }}>
+              {item.icon}
+            </div>
+            <div>
+              <span>{item.label}</span>
+              <strong style={{ color: statusColor[item.phase] }}>{item.status || statusLabel[item.phase]}</strong>
+              <small title={item.value}>{item.value}</small>
+            </div>
           </div>
-        </CollapsiblePane>
-        
-      </div>
+        ))}
+        <button className="btn sidecar-refresh" onClick={() => void refreshSidecarsOnce()} title="Refresh sidecar status">
+          <RefreshCw size={14} />
+        </button>
+      </section>
 
-      {/* Right Column: Alerts & Advisory */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--pad-md)', overflowY: 'auto' }}>
-        
-        <KnowledgeHealthScore />
-        <KnowledgeAlerts />
-
-        {/* Next Actions — derived from real state; no fabricated tasks */}
-        <CollapsiblePane title="Next Actions" defaultExpanded={true}>
-          <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', border: '1px dashed var(--border-color)', borderRadius: '4px' }}>
-            {backend.status === 'online'
-              ? 'No recommended actions.'
-              : backend.status === 'offline'
-                ? 'Backend offline — actions unavailable.'
-                : 'Awaiting backend connection…'}
+      <div className="notebook-grid">
+        <section className="workspace-panel source-library">
+          <div className="panel-heading">
+            <div>
+              <h2>Sources</h2>
+              <p>{isOnline ? 'Live source library from the local backend.' : 'Backend offline - source library unavailable.'}</p>
+            </div>
+            <button className="btn" onClick={() => navigate('/sources')}>
+              <Plus size={14} /> Source
+            </button>
           </div>
-        </CollapsiblePane>
 
+          <div className="source-table">
+            <div className="source-table-head">
+              <span>Source</span>
+              <span>Type</span>
+              <span>Status</span>
+            </div>
+            {loading && <div className="empty-row">Loading live sources...</div>}
+            {!loading && workspaceError && <div className="empty-row error-text">{workspaceError}</div>}
+            {!loading && !workspaceError && sources.slice(0, 6).map((source, index) => (
+              <button key={source.id || index} className="source-row" onClick={() => navigate('/sources')}>
+                <span>
+                  <FileText size={15} />
+                  {pickName(source, `Source ${index + 1}`)}
+                </span>
+                <span>{source.type || 'Unknown'}</span>
+                <span>{source.status || 'Unknown'}</span>
+              </button>
+            ))}
+            {!loading && !workspaceError && sources.length === 0 && (
+              <div className="empty-row">
+                {isOnline ? 'No sources imported yet.' : 'Connect the backend to load sources.'}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="workspace-panel briefing-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Briefing</h2>
+              <p>Generated summaries stay empty until source-backed context exists.</p>
+            </div>
+            <Sparkles size={18} color="var(--accent-primary)" />
+          </div>
+          <div className="briefing-body">
+            <div>
+              <span>Selected notebook</span>
+              <strong>{selectedNotebook ? pickName(selectedNotebook, 'Untitled notebook') : 'No notebook selected'}</strong>
+            </div>
+            <div>
+              <span>Citation coverage</span>
+              <strong>{valueText(telemetry.knowledgeCoverage.citationCoverage)}</strong>
+            </div>
+            <div>
+              <span>Retrieval latency</span>
+              <strong>{valueText(telemetry.retrievalHealth.latency)}</strong>
+            </div>
+          </div>
+          <div className="briefing-empty">
+            <BookOpen size={18} />
+            <span>{sources.length > 0 ? 'Briefing generation is waiting for a selected source.' : 'Import sources to generate a grounded briefing.'}</span>
+          </div>
+        </section>
+
+        <section className="workspace-panel notebook-list-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Notebooks</h2>
+              <p>{isOnline ? 'Recent local notebooks.' : 'Notebook list unavailable while offline.'}</p>
+            </div>
+            <button className="btn" onClick={() => navigate('/notebooks')}>
+              <BookOpen size={14} /> Library
+            </button>
+          </div>
+          <div className="notebook-stack">
+            {notebooks.slice(0, 4).map((notebook, index) => (
+              <button
+                key={notebook.id || index}
+                className="notebook-row"
+                onClick={() => notebook.id && navigate(`/notebook/${notebook.id}`)}
+              >
+                <BookOpen size={16} />
+                <span>{pickName(notebook, `Notebook ${index + 1}`)}</span>
+                <small>{notebook.sources?.length ?? 'Unknown'} sources</small>
+              </button>
+            ))}
+            {notebooks.length === 0 && (
+              <div className="empty-row">{isOnline ? 'No notebooks yet.' : 'Connect the backend to load notebooks.'}</div>
+            )}
+          </div>
+        </section>
+
+        <aside className="ask-rail">
+          <section className="workspace-panel ask-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>Ask this notebook</h2>
+                <p>{selectedNotebook ? pickName(selectedNotebook, 'Notebook') : 'Select or create a notebook first.'}</p>
+              </div>
+              {isOnline ? <CheckCircle2 size={17} color="var(--signal-healthy)" /> : <XCircle size={17} color="var(--signal-error)" />}
+            </div>
+
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Ask a source-grounded question..."
+              disabled={!isOnline || !selectedNotebook}
+            />
+            <button className="btn primary" disabled={!isOnline || !selectedNotebook || !prompt.trim()} onClick={() => navigate('/chat')}>
+              <MessageSquare size={15} /> Open chat
+            </button>
+
+            <div className="suggested-prompts">
+              <button disabled={!selectedNotebook}>Summarize the source set</button>
+              <button disabled={!selectedNotebook}>Find contradictions</button>
+              <button disabled={!selectedNotebook}>List cited claims</button>
+            </div>
+          </section>
+
+          <section className="workspace-panel citation-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>Citations</h2>
+                <p>Visible references for grounded answers.</p>
+              </div>
+              <Quote size={18} color="var(--accent-primary)" />
+            </div>
+            <div className="citation-empty">
+              No cited passages yet. Ask a notebook question after importing sources.
+            </div>
+          </section>
+
+          <section className="workspace-panel audio-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>Audio overview</h2>
+                <p>NotebookLM-style audio output lane.</p>
+              </div>
+              <AudioLines size={18} color="var(--accent-primary)" />
+            </div>
+            <div className="audio-status">
+              <span>Studio queue</span>
+              <strong>{valueText(telemetry.studioQueue.audiobookJobs)}</strong>
+            </div>
+          </section>
+
+          <button className="btn restart-sidecars" onClick={() => void restartSidecars()}>
+            <RefreshCw size={14} /> Restart sidecars
+          </button>
+        </aside>
       </div>
     </div>
   );

@@ -1,0 +1,57 @@
+-- Migration 15: Image Capsules
+-- Stores canon-aware visual context objects beside existing notebook sources.
+
+DEFINE TABLE IF NOT EXISTS image_capsule SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS asset_id ON TABLE image_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS source ON TABLE image_capsule TYPE option<record<source>>;
+DEFINE FIELD IF NOT EXISTS original_filename ON TABLE image_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS original_path ON TABLE image_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS canonical_alias ON TABLE image_capsule TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS sha256 ON TABLE image_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS perceptual_hash ON TABLE image_capsule TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS mime_type ON TABLE image_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS width ON TABLE image_capsule TYPE int;
+DEFINE FIELD IF NOT EXISTS height ON TABLE image_capsule TYPE int;
+DEFINE FIELD IF NOT EXISTS file_size ON TABLE image_capsule TYPE int;
+DEFINE FIELD IF NOT EXISTS project_namespace ON TABLE image_capsule TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS parser_mode ON TABLE image_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS canon_status ON TABLE image_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS image_type ON TABLE image_capsule TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS scene_type ON TABLE image_capsule TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS confirmed_context ON TABLE image_capsule TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS provenance ON TABLE image_capsule TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS negative_constraints ON TABLE image_capsule TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS warnings ON TABLE image_capsule TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS palette ON TABLE image_capsule TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS notebooks ON TABLE image_capsule TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS duplicate_capsules ON TABLE image_capsule TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS similar_capsules ON TABLE image_capsule TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS llm_context_card ON TABLE image_capsule TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS published_at ON TABLE image_capsule TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE image_capsule DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE image_capsule DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_image_capsule_sha256 ON TABLE image_capsule FIELDS sha256;
+DEFINE INDEX IF NOT EXISTS idx_image_capsule_asset_id ON TABLE image_capsule FIELDS asset_id UNIQUE;
+
+DEFINE TABLE IF NOT EXISTS image_region SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS capsule ON TABLE image_region TYPE record<image_capsule>;
+DEFINE FIELD IF NOT EXISTS label ON TABLE image_region TYPE string;
+DEFINE FIELD IF NOT EXISTS caption ON TABLE image_region TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS manual_text ON TABLE image_region TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS tags ON TABLE image_region TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS confidence ON TABLE image_region TYPE float;
+DEFINE FIELD IF NOT EXISTS bounds ON TABLE image_region TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS order ON TABLE image_region TYPE int;
+DEFINE FIELD IF NOT EXISTS provenance ON TABLE image_region TYPE string;
+DEFINE FIELD IF NOT EXISTS created ON TABLE image_region DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE image_region DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_image_region_capsule ON TABLE image_region FIELDS capsule;
+
+DEFINE TABLE IF NOT EXISTS image_capsule_revision SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS capsule ON TABLE image_capsule_revision TYPE record<image_capsule>;
+DEFINE FIELD IF NOT EXISTS event ON TABLE image_capsule_revision TYPE string;
+DEFINE FIELD IF NOT EXISTS snapshot ON TABLE image_capsule_revision TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS notes ON TABLE image_capsule_revision TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE image_capsule_revision DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE image_capsule_revision DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_image_capsule_revision_capsule ON TABLE image_capsule_revision FIELDS capsule;

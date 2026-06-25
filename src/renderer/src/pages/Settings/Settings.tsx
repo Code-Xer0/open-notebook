@@ -1,23 +1,27 @@
-import React, { useState } from 'react';
-import { useStore } from '../../store/useStore';
-import { Select } from '../../components/Select';
-import { ModelSelect } from '../../components/ModelSelect';
-import { 
-  Settings as SettingsIcon, 
-  Palette, 
-  Cpu, 
-  Cloud, 
-  Network, 
-  Database, 
-  Eye, 
-  HardDrive, 
-  ShieldAlert, 
-  Route, 
-  DownloadCloud, 
+import React from 'react';
+import {
   Activity,
-  CheckCircle2,
-  XCircle
+  Cloud,
+  Cpu,
+  Database,
+  DownloadCloud,
+  Eye,
+  HardDrive,
+  Monitor,
+  Moon,
+  Network,
+  Palette,
+  RefreshCw,
+  Route,
+  Settings as SettingsIcon,
+  ShieldAlert,
+  Sun
 } from 'lucide-react';
+import { ModelSelect } from '../../components/ModelSelect';
+import { Select } from '../../components/Select';
+import { openSidecarLog, refreshSidecarsOnce, restartSidecars } from '../../services/sidecars';
+import { useStore } from '../../store/useStore';
+import { codexDarkTheme, codexLightTheme, themePresets, themeSwatchKeys, type ThemeMode } from '../../theme';
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SettingsIcon },
@@ -28,107 +32,191 @@ const SECTIONS = [
   { id: 'embeddings', label: 'Embeddings', icon: Database },
   { id: 'ocr-vision', label: 'OCR / Vision', icon: Eye },
   { id: 'storage', label: 'Storage', icon: HardDrive },
-  { id: 'privacy', label: 'Privacy / Redaction', icon: ShieldAlert },
-  { id: 'routing', label: 'Routing Rules', icon: Route },
+  { id: 'privacy', label: 'Privacy', icon: ShieldAlert },
+  { id: 'routing', label: 'Routing', icon: Route },
   { id: 'export-import', label: 'Export / Import', icon: DownloadCloud },
-  { id: 'diagnostics', label: 'Diagnostics', icon: Activity },
-];
+  { id: 'diagnostics', label: 'Diagnostics', icon: Activity }
+] as const;
+
+type SectionId = (typeof SECTIONS)[number]['id'];
+type Tone = 'healthy' | 'warning' | 'error' | 'muted' | 'accent';
+
+const toneColor: Record<Tone, string> = {
+  healthy: 'var(--signal-healthy)',
+  warning: 'var(--signal-warning)',
+  error: 'var(--signal-error)',
+  muted: 'var(--text-muted)',
+  accent: 'var(--accent-primary)'
+};
+
+function StatusCard({ title, status, detail, tone = 'muted', action }: {
+  title: string;
+  status: string;
+  detail: string;
+  tone?: Tone;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="settings-status" style={{ ['--status-color' as string]: toneColor[tone] } as React.CSSProperties}>
+      <div>
+        <span>{title}</span>
+        <strong>{status}</strong>
+        <p>{detail}</p>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+  return (
+    <div className="form-group">
+      <label>{label}</label>
+      {children}
+      {hint && <small>{hint}</small>}
+    </div>
+  );
+}
+
+function CheckboxField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="settings-check">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span>{label}</span>
+    </label>
+  );
+}
 
 export function Settings() {
-  const { settings, updateSettings, backend } = useStore();
-  const [activeTab, setActiveTab] = useState('general');
+  const { settings, updateSettings, backend, sidecars } = useStore();
+  const [activeTab, setActiveTab] = React.useState<SectionId>('general');
+  const [logResult, setLogResult] = React.useState<string | null>(null);
 
-  // Helpers for inputs
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value, type } = e.target;
-    if (type === 'checkbox') {
-      const checked = (e.target as HTMLInputElement).checked;
-      updateSettings({ [name]: checked });
-    } else {
-      updateSettings({ [name]: value });
-    }
-  };
+  const hasStalePortOwner = Boolean(sidecars?.ports.some((port) => port.staleExternal));
+  const sidecarsReady = sidecars?.surreal.phase === 'online' && sidecars?.backend.phase === 'online' && !hasStalePortOwner;
+  const backendTone: Tone = backend.status === 'online' ? 'healthy' : backend.status === 'offline' ? 'error' : 'warning';
 
-  const renderTabContent = () => {
+  async function handleOpenLog() {
+    const result = await openSidecarLog();
+    setLogResult(result || 'Opened sidecar log.');
+  }
+
+  const sectionTitle = SECTIONS.find((s) => s.id === activeTab)?.label ?? 'Settings';
+
+  const renderContent = () => {
     switch (activeTab) {
       case 'general':
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">General Settings</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-                <button className="btn" style={{ background: 'rgba(255,255,255,0.1)' }}>Save</button>
-              </div>
+          <>
+            <StatusCard
+              title="Backend"
+              status={backend.status === 'online' ? `Connected${backend.version ? ` - v${backend.version}` : ''}` : backend.status === 'offline' ? 'Offline' : backend.status === 'connecting' ? 'Connecting' : 'Unknown'}
+              detail={backend.status === 'online' ? 'Local API is reachable on 127.0.0.1:5055.' : 'Notebook data, sources, and grounded chat require the local API.'}
+              tone={backendTone}
+            />
+            <div className="settings-grid">
+              <Field label="Language" hint="UI language is currently fixed while localization is not implemented.">
+                <Select
+                  ariaLabel="Language"
+                  value="en-US"
+                  disabled
+                  onChange={() => undefined}
+                  options={[{ value: 'en-US', label: 'English (US)' }]}
+                />
+              </Field>
+              <CheckboxField label="Launch on System Startup" checked={Boolean(settings.launchOnStartup)} onChange={(launchOnStartup) => updateSettings({ launchOnStartup })} />
             </div>
-            <p className="color-text-muted">Doctrine: Global parameters must be deterministic and transparent to the operator.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: `4px solid ${backend.status === 'online' ? 'var(--signal-healthy)' : backend.status === 'offline' ? 'var(--signal-error)' : 'var(--text-muted)'}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Backend:</strong> <span style={{ color: backend.status === 'online' ? 'var(--signal-healthy)' : backend.status === 'offline' ? 'var(--signal-error)' : 'var(--text-muted)' }}>{backend.status === 'online' ? `Connected${backend.version ? ` · v${backend.version}` : ''}` : backend.status === 'offline' ? 'Offline' : backend.status === 'connecting' ? 'Connecting…' : 'Unknown'}</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: {backend.status === 'online' ? 'Local API reachable on :5055.' : 'Local API (sidecar) not reachable. Start the backend to enable live data.'}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="form-group">
-                <label>Language</label>
-                <select className="glass-input" disabled>
-                  <option>English (US)</option>
-                </select>
-                <small className="color-text-muted">UI language (currently English only)</small>
-              </div>
-              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
-                <input type="checkbox" name="launchOnStartup" checked={settings.launchOnStartup || false} onChange={handleChange} id="launchOnStartup" />
-                <label htmlFor="launchOnStartup" style={{ margin: 0 }}>Launch on System Startup</label>
-              </div>
-            </div>
-          </div>
+          </>
         );
-      
-      case 'themes':
+
+      case 'themes': {
+        const activeMode = settings.themeMode || 'system';
+        const editMode = activeMode === 'dark' ? 'dark' : 'light';
+        const baseColors = editMode === 'dark' ? codexDarkTheme : codexLightTheme;
+        const activeOverrides = settings.themeCustomizations?.[editMode] || (editMode === 'light' ? settings.themeCustomization : {});
+        const customColors = { ...baseColors, ...(activeOverrides || {}) };
+        const modeOptions: Array<{ value: ThemeMode; label: string; icon: React.ReactNode }> = [
+          { value: 'light', label: 'Light', icon: <Sun size={15} /> },
+          { value: 'dark', label: 'Dark', icon: <Moon size={15} /> },
+          { value: 'system', label: 'System', icon: <Monitor size={15} /> }
+        ];
+
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">Themes</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-                <button className="btn" style={{ background: 'rgba(255,255,255,0.1)' }}>Save</button>
-              </div>
-            </div>
-            <p className="color-text-muted">Doctrine: Visual ergonomics reduce cognitive load during sustained operations.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: '4px solid #2196f3' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Status:</strong> <span style={{ color: '#2196f3' }}>Theme Engine Active</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: Applying {settings.themeFamily || 'operator-crimson'} at {settings.themeDensity || 'comfortable'} density.</p>
-                </div>
+          <>
+            <StatusCard
+              title="Theme Engine"
+              status="Auto-saved"
+              detail="Light, Dark, and System modes use first-class CODEX palettes. Custom swatches apply only when advanced overrides are enabled."
+              tone="accent"
+              action={<button className="btn" onClick={() => updateSettings({ themeMode: 'system', customThemeEnabled: false, themeCustomization: codexLightTheme, themeCustomizations: { light: codexLightTheme, dark: codexDarkTheme } })}>Reset</button>}
+            />
+
+            <div className="settings-header" style={{ marginBottom: '16px' }}>
+              <div>
+                <div className="workspace-kicker">Theme Mode</div>
+                <h3 style={{ fontSize: '14px', color: 'var(--text-main)', marginTop: '4px' }}>Choose the primary light/dark behavior.</h3>
               </div>
             </div>
 
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="form-group">
-                <label>Theme Family</label>
+            <div className="theme-mode-control" role="group" aria-label="Theme mode">
+              {modeOptions.map((mode) => (
+                <button
+                  key={mode.value}
+                  className={activeMode === mode.value ? 'selected' : ''}
+                  onClick={() => updateSettings({ themeMode: mode.value })}
+                >
+                  {mode.icon}
+                  <span>{mode.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="settings-header" style={{ marginTop: '24px', marginBottom: '16px' }}>
+              <div>
+                <div className="workspace-kicker">Primary Presets</div>
+                <h3 style={{ fontSize: '14px', color: 'var(--text-main)', marginTop: '4px' }}>Apply the CODEX base palette for the chosen mode.</h3>
+              </div>
+            </div>
+
+            <div className="theme-preset-grid">
+              {themePresets.map((preset) => (
+                <button
+                  key={preset.id}
+                  className="theme-preset-card"
+                  onClick={() => updateSettings({
+                    themeMode: preset.mode,
+                    customThemeEnabled: false,
+                    themeCustomization: preset.mode === 'light' ? preset.colors : settings.themeCustomization,
+                    themeCustomizations: {
+                      ...(settings.themeCustomizations || {}),
+                      [preset.mode]: preset.colors
+                    }
+                  })}
+                >
+                  <span className="theme-preset-title">{preset.name}</span>
+                  <span className="theme-preset-detail">{preset.description}</span>
+                  <span className="theme-swatch-row">
+                    {themeSwatchKeys.slice(0, 6).map((key) => (
+                      <i key={key} style={{ background: preset.colors[key] }} />
+                    ))}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="settings-grid" style={{ marginBottom: '24px' }}>
+              <Field label="Interface Skin" hint="Structural layout wrappers.">
                 <Select
                   ariaLabel="Theme Family"
-                  value={settings.themeFamily || 'operator-crimson'}
+                  value={settings.themeFamily || 'notebook'}
                   onChange={(v) => updateSettings({ themeFamily: v as typeof settings.themeFamily })}
                   options={[
-                    { value: 'operator-crimson', label: 'Operator Crimson' },
-                    { value: 'cerberus-red', label: 'Cerberus Red' },
-                    { value: 'forge-amber', label: 'Forge Amber' },
-                    { value: 'continuity-gold', label: 'Continuity Gold' },
-                    { value: 'argos-cyan', label: 'Argos Cyan' },
-                    { value: 'field-blue', label: 'Field Blue' },
-                    { value: 'obsidian', label: 'Obsidian' },
+                    { value: 'notebook', label: 'Default' },
+                    { value: 'operator-crimson', label: 'Operator' }
                   ]}
                 />
-              </div>
-              <div className="form-group">
-                <label>Theme Density</label>
+              </Field>
+              <Field label="Density">
                 <Select
                   ariaLabel="Theme Density"
                   value={settings.themeDensity || 'comfortable'}
@@ -136,536 +224,325 @@ export function Settings() {
                   options={[
                     { value: 'comfortable', label: 'Comfortable' },
                     { value: 'dense', label: 'Dense' },
-                    { value: 'operator-dense', label: 'Operator Dense' },
+                    { value: 'operator-dense', label: 'Operator Dense' }
                   ]}
                 />
+              </Field>
+            </div>
+
+            <div className="settings-header" style={{ marginBottom: '16px' }}>
+              <div>
+                <div className="workspace-kicker">Advanced Overrides</div>
+                <h3 style={{ fontSize: '14px', color: 'var(--text-main)', marginTop: '4px' }}>Granular swatches edit the {editMode} palette and are optional.</h3>
               </div>
             </div>
-          </div>
+
+            <div className="settings-actions-row" style={{ marginBottom: '16px' }}>
+              <CheckboxField
+                label="Use custom swatches over the selected light/dark palette"
+                checked={Boolean(settings.customThemeEnabled)}
+                onChange={(customThemeEnabled) => updateSettings({ customThemeEnabled })}
+              />
+            </div>
+
+            <div className="settings-grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
+              {themeSwatchKeys.map((key) => (
+                <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', padding: '8px 12px', borderRadius: 'var(--radius-sm)' }}>
+                  <input
+                    type="color"
+                    value={customColors[key]}
+                    onChange={(e) => updateSettings({
+                      customThemeEnabled: true,
+                      themeCustomization: editMode === 'light'
+                        ? { ...settings.themeCustomization, [key]: e.target.value }
+                        : settings.themeCustomization,
+                      themeCustomizations: {
+                        ...(settings.themeCustomizations || {}),
+                        [editMode]: {
+                          ...(settings.themeCustomizations?.[editMode] || {}),
+                          [key]: e.target.value
+                        }
+                      }
+                    })}
+                    style={{ width: '32px', height: '32px', padding: 0, border: 'none', background: 'none', cursor: 'pointer', borderRadius: '4px', overflow: 'hidden' }}
+                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-main)', textTransform: 'capitalize' }}>{key}</span>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{customColors[key]}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         );
+      }
 
       case 'local-models':
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">Local Models</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-                <button className="btn" style={{ background: 'rgba(255,255,255,0.1)' }}>Save</button>
-              </div>
+          <>
+            <StatusCard
+              title="Ollama"
+              status={settings.ollamaEndpoint ? 'Configured - health unknown' : 'Not configured'}
+              detail={settings.ollamaEndpoint ? 'Use model discovery to verify the local daemon.' : 'Set an endpoint before local model discovery.'}
+              tone={settings.ollamaEndpoint ? 'warning' : 'muted'}
+            />
+            <div className="settings-grid">
+              <Field label="Ollama Endpoint">
+                <input className="glass-input" value={settings.ollamaEndpoint || ''} onChange={(e) => updateSettings({ ollamaEndpoint: e.target.value })} placeholder="http://localhost:11434" />
+              </Field>
+              <Field label="Default Chat Model">
+                <ModelSelect source="ollama" ollamaEndpoint={settings.ollamaEndpoint} value={settings.defaultChatModel || ''} onChange={(defaultChatModel) => updateSettings({ defaultChatModel })} placeholder="e.g. llama3:latest" />
+              </Field>
+              <Field label="Default Embedding Model">
+                <ModelSelect source="ollama" ollamaEndpoint={settings.ollamaEndpoint} value={settings.defaultEmbeddingModel || ''} onChange={(defaultEmbeddingModel) => updateSettings({ defaultEmbeddingModel })} placeholder="e.g. nomic-embed-text" />
+              </Field>
+              <Field label="Default Vision Model">
+                <ModelSelect source="ollama" ollamaEndpoint={settings.ollamaEndpoint} value={settings.defaultVisionModel || ''} onChange={(defaultVisionModel) => updateSettings({ defaultVisionModel })} placeholder="e.g. llava" />
+              </Field>
             </div>
-            <p className="color-text-muted">Doctrine: Local execution is the foundation of privacy. All local inferences remain on device.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: settings.ollamaEndpoint ? '4px solid var(--signal-warning)' : '4px solid var(--text-muted)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Status:</strong> <span style={{ color: settings.ollamaEndpoint ? 'var(--signal-warning)' : 'var(--text-muted)' }}>{settings.ollamaEndpoint ? 'Configured · health unknown' : 'Not configured'}</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: {settings.ollamaEndpoint ? 'Endpoint set. Run Test Health to verify the Ollama connection.' : 'Missing Ollama endpoint. Local execution disabled.'}</p>
-                </div>
-                <button className="btn">Test Health</button>
-              </div>
-            </div>
-
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="form-group">
-                <label>Ollama Endpoint</label>
-                <input type="text" name="ollamaEndpoint" value={settings.ollamaEndpoint || ''} onChange={handleChange} placeholder="http://localhost:11434" className="glass-input" />
-              </div>
-              <div className="form-group">
-                <label>Default Chat Model</label>
-                <ModelSelect source="ollama" ollamaEndpoint={settings.ollamaEndpoint} value={settings.defaultChatModel || ''} onChange={(v) => updateSettings({ defaultChatModel: v })} placeholder="e.g. llama3:latest" />
-              </div>
-              <div className="form-group">
-                <label>Default Embedding Model</label>
-                <ModelSelect source="ollama" ollamaEndpoint={settings.ollamaEndpoint} value={settings.defaultEmbeddingModel || ''} onChange={(v) => updateSettings({ defaultEmbeddingModel: v })} placeholder="e.g. nomic-embed-text" />
-              </div>
-              <div className="form-group">
-                <label>Default Vision Model</label>
-                <ModelSelect source="ollama" ollamaEndpoint={settings.ollamaEndpoint} value={settings.defaultVisionModel || ''} onChange={(v) => updateSettings({ defaultVisionModel: v })} placeholder="e.g. llava" />
-              </div>
-            </div>
-          </div>
+          </>
         );
 
       case 'cloud-providers':
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">Cloud Providers</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-                <button className="btn" style={{ background: 'rgba(255,255,255,0.1)' }}>Save</button>
-              </div>
+          <>
+            <StatusCard
+              title="Cloud Providers"
+              status={(settings.openaiApiKey || settings.anthropicApiKey || settings.googleApiKey) ? 'Configured - not verified' : 'Not configured'}
+              detail="Provider keys are local settings here. A provider test must succeed before showing healthy."
+              tone={(settings.openaiApiKey || settings.anthropicApiKey || settings.googleApiKey) ? 'warning' : 'muted'}
+            />
+            <div className="settings-grid">
+              <Field label="OpenAI API Key">
+                <input className="glass-input" type="password" value={settings.openaiApiKey || ''} onChange={(e) => updateSettings({ openaiApiKey: e.target.value })} placeholder="Not configured" />
+              </Field>
+              <Field label="Anthropic API Key">
+                <input className="glass-input" type="password" value={settings.anthropicApiKey || ''} onChange={(e) => updateSettings({ anthropicApiKey: e.target.value })} placeholder="Not configured" />
+              </Field>
+              <Field label="Google API Key">
+                <input className="glass-input" type="password" value={settings.googleApiKey || ''} onChange={(e) => updateSettings({ googleApiKey: e.target.value })} placeholder="Not configured" />
+              </Field>
             </div>
-            <p className="color-text-muted">Doctrine: External compute is an augmentation. Keys are stored strictly in local app storage.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: (settings.openaiApiKey || settings.anthropicApiKey || settings.googleApiKey) ? '4px solid #4caf50' : '4px solid #ff9800' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Status:</strong> <span style={{ color: (settings.openaiApiKey || settings.anthropicApiKey || settings.googleApiKey) ? '#4caf50' : '#ff9800' }}>{(settings.openaiApiKey || settings.anthropicApiKey || settings.googleApiKey) ? 'Providers Configured' : 'No Providers Configured'}</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: {(settings.openaiApiKey || settings.anthropicApiKey || settings.googleApiKey) ? 'Keys loaded securely.' : 'Add keys to enable cloud capabilities.'}</p>
-                </div>
-                <button className="btn">Run Health Check</button>
-              </div>
-            </div>
-
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="form-group">
-                <label>OpenAI API Key</label>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <input type="password" name="openaiApiKey" value={settings.openaiApiKey || ''} onChange={handleChange} placeholder={settings.openaiApiKey ? "••••••••••••••••" : "Not configured"} className="glass-input" style={{ flex: 1 }} />
-                  {settings.openaiApiKey ? <CheckCircle2 className="color-text-muted" /> : <XCircle className="color-text-muted" />}
-                </div>
-              </div>
-              <div className="form-group">
-                <label>Anthropic API Key</label>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <input type="password" name="anthropicApiKey" value={settings.anthropicApiKey || ''} onChange={handleChange} placeholder={settings.anthropicApiKey ? "••••••••••••••••" : "Not configured"} className="glass-input" style={{ flex: 1 }} />
-                  {settings.anthropicApiKey ? <CheckCircle2 className="color-text-muted" /> : <XCircle className="color-text-muted" />}
-                </div>
-              </div>
-              <div className="form-group">
-                <label>Google API Key</label>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <input type="password" name="googleApiKey" value={settings.googleApiKey || ''} onChange={handleChange} placeholder={settings.googleApiKey ? "••••••••••••••••" : "Not configured"} className="glass-input" style={{ flex: 1 }} />
-                  {settings.googleApiKey ? <CheckCircle2 className="color-text-muted" /> : <XCircle className="color-text-muted" />}
-                </div>
-              </div>
-            </div>
-          </div>
+          </>
         );
 
       case 'edge-nodes':
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">Edge Nodes</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-                <button className="btn" style={{ background: 'rgba(255,255,255,0.1)' }}>Save</button>
-              </div>
+          <>
+            <StatusCard
+              title="Edge Nodes"
+              status={settings.edgeNodeRegistry ? 'Registry set - not verified' : 'Not configured'}
+              detail="Edge execution requires an explicit successful health check before use."
+              tone={settings.edgeNodeRegistry ? 'warning' : 'muted'}
+            />
+            <div className="settings-grid">
+              <Field label="Registry URL">
+                <input className="glass-input" value={settings.edgeNodeRegistry || ''} onChange={(e) => updateSettings({ edgeNodeRegistry: e.target.value })} placeholder="wss://edge.local" />
+              </Field>
+              <Field label="Capability Requirements">
+                <input className="glass-input" value={settings.edgeCapabilities || ''} onChange={(e) => updateSettings({ edgeCapabilities: e.target.value })} placeholder="gpu>=8gb, ram>=16gb" />
+              </Field>
+              <Field label="Preferred Fallback">
+                <Select ariaLabel="Preferred Fallback" value={settings.edgeFallback || 'cloud'} onChange={(edgeFallback) => updateSettings({ edgeFallback })} options={[
+                  { value: 'cloud', label: 'Cloud Provider' },
+                  { value: 'local', label: 'Local Model' },
+                  { value: 'fail', label: 'Fail Fast' }
+                ]} />
+              </Field>
+              <CheckboxField label="Enable Continuous Health Checks" checked={Boolean(settings.edgeHealthChecks)} onChange={(edgeHealthChecks) => updateSettings({ edgeHealthChecks })} />
             </div>
-            <p className="color-text-muted">Doctrine: Distributed trust enables resilient compute. Edge nodes act as physical extensions.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: settings.edgeNodeRegistry ? '4px solid var(--signal-warning)' : '4px solid var(--text-muted)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Status:</strong> <span style={{ color: settings.edgeNodeRegistry ? 'var(--signal-warning)' : 'var(--text-muted)' }}>{settings.edgeNodeRegistry ? 'Registry set · not verified' : 'Not configured'}</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: {settings.edgeNodeRegistry ? 'Registry URL set. Use Ping Swarm to verify reachability. Operator approval required before edge use.' : 'No edge nodes configured.'}</p>
-                </div>
-                <button className="btn">Ping Swarm</button>
-              </div>
-            </div>
-
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="form-group">
-                <label>Edge Node Registry URL</label>
-                <input type="text" name="edgeNodeRegistry" value={settings.edgeNodeRegistry || ''} onChange={handleChange} placeholder="e.g. wss://edge.local" className="glass-input" />
-              </div>
-              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
-                <input type="checkbox" name="edgeHealthChecks" checked={settings.edgeHealthChecks || false} onChange={handleChange} id="edgeHealthChecks" />
-                <label htmlFor="edgeHealthChecks" style={{ margin: 0 }}>Enable Continuous Health Checks</label>
-              </div>
-              <div className="form-group">
-                <label>Capability Requirements</label>
-                <input type="text" name="edgeCapabilities" value={settings.edgeCapabilities || ''} onChange={handleChange} placeholder="e.g. gpu>=8gb, ram>=16gb" className="glass-input" />
-              </div>
-              <div className="form-group">
-                <label>Preferred Fallback</label>
-                <Select
-                  ariaLabel="Preferred Fallback"
-                  value={settings.edgeFallback || 'cloud'}
-                  onChange={(v) => updateSettings({ edgeFallback: v })}
-                  options={[
-                    { value: 'cloud', label: 'Cloud Provider' },
-                    { value: 'local', label: 'Local Model' },
-                    { value: 'fail', label: 'Fail Fast' },
-                  ]}
-                />
-              </div>
-            </div>
-          </div>
+          </>
         );
 
       case 'embeddings':
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">Embeddings</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-                <button className="btn" style={{ background: 'rgba(255,255,255,0.1)' }}>Save</button>
-              </div>
+          <>
+            <StatusCard
+              title="Embedding Pipeline"
+              status={settings.embeddingModel ? 'Configured - health unknown' : 'No model selected'}
+              detail="Vector generation is not healthy until a real embedding request succeeds."
+              tone={settings.embeddingModel ? 'warning' : 'muted'}
+            />
+            <div className="settings-grid">
+              <Field label="Embedding Model">
+                <ModelSelect source="ollama" ollamaEndpoint={settings.ollamaEndpoint} value={settings.embeddingModel || ''} onChange={(embeddingModel) => updateSettings({ embeddingModel })} placeholder="e.g. nomic-embed-text" />
+              </Field>
+              <Field label="Embedding Dimension">
+                <input className="glass-input" type="number" value={settings.embeddingDimension || 1536} onChange={(e) => updateSettings({ embeddingDimension: Number(e.target.value) })} />
+              </Field>
+              <Field label="Chunk Size">
+                <input className="glass-input" type="number" value={settings.embeddingChunkSize || 500} onChange={(e) => updateSettings({ embeddingChunkSize: Number(e.target.value) })} />
+              </Field>
             </div>
-            <p className="color-text-muted">Doctrine: Semantic representation must be consistent to preserve vector database integrity.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: settings.embeddingModel ? '4px solid var(--signal-warning)' : '4px solid var(--text-muted)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Status:</strong> <span style={{ color: settings.embeddingModel ? 'var(--signal-warning)' : 'var(--text-muted)' }}>{settings.embeddingModel ? 'Configured · health unknown' : 'No model selected'}</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: {settings.embeddingModel ? 'Model set. Use Test Pipeline to verify the embedding backend.' : 'Requires embedding model for semantic search.'}</p>
-                </div>
-                <button className="btn">Test Pipeline</button>
-              </div>
-            </div>
-
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="form-group">
-                <label>Embedding Model</label>
-                <ModelSelect source="ollama" ollamaEndpoint={settings.ollamaEndpoint} value={settings.embeddingModel || ''} onChange={(v) => updateSettings({ embeddingModel: v })} placeholder="e.g. nomic-embed-text" />
-              </div>
-              <div className="form-group">
-                <label>Vector Dimension</label>
-                <input type="number" name="embeddingDimension" value={settings.embeddingDimension || 768} onChange={handleChange} placeholder="e.g. 768" className="glass-input" />
-              </div>
-              <div className="form-group">
-                <label>Chunk Size</label>
-                <input type="number" name="embeddingChunkSize" value={settings.embeddingChunkSize || 1000} onChange={handleChange} placeholder="e.g. 1000" className="glass-input" />
-              </div>
-            </div>
-          </div>
+          </>
         );
 
       case 'ocr-vision':
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">OCR / Vision</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-                <button className="btn" style={{ background: 'rgba(255,255,255,0.1)' }}>Save</button>
-              </div>
+          <>
+            <StatusCard
+              title="OCR / Vision"
+              status={settings.visionProvider === 'disabled' ? 'Disabled' : 'Configured - not wired'}
+              detail="Image, OCR, and video lanes remain explicit scaffolds until backend verification exists."
+              tone={settings.visionProvider === 'disabled' ? 'muted' : 'warning'}
+            />
+            <div className="settings-grid">
+              <Field label="Vision Provider">
+                <Select ariaLabel="Vision Provider" value={settings.visionProvider || 'disabled'} onChange={(visionProvider) => updateSettings({ visionProvider })} options={[
+                  { value: 'disabled', label: 'Disabled' },
+                  { value: 'local', label: 'Local' },
+                  { value: 'cloud', label: 'Cloud' },
+                  { value: 'edge', label: 'Edge' }
+                ]} />
+              </Field>
+              <Field label="Vision Model">
+                <input className="glass-input" value={settings.visionModel || ''} onChange={(e) => updateSettings({ visionModel: e.target.value })} placeholder="llava" />
+              </Field>
+              <Field label="OCR Engine">
+                <Select ariaLabel="OCR Engine" value={settings.ocrEngine || 'tesseract'} onChange={(ocrEngine) => updateSettings({ ocrEngine })} options={[
+                  { value: 'tesseract', label: 'Tesseract' },
+                  { value: 'paddleocr', label: 'PaddleOCR' },
+                  { value: 'cloudocr', label: 'Cloud OCR' }
+                ]} />
+              </Field>
+              <CheckboxField label="Auto-detect scanned PDFs" checked={Boolean(settings.ocrAutoDetect)} onChange={(ocrAutoDetect) => updateSettings({ ocrAutoDetect })} />
+              <CheckboxField label="Extract and OCR inline images" checked={Boolean(settings.ocrImageExtract)} onChange={(ocrImageExtract) => updateSettings({ ocrImageExtract })} />
             </div>
-            <p className="color-text-muted">Doctrine: High-fidelity visual data extraction requires robust, composable OCR and Vision pipelines.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: settings.visionProvider === 'disabled' ? '4px solid var(--text-muted)' : '4px solid var(--signal-warning)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Status:</strong> <span style={{ color: settings.visionProvider === 'disabled' ? 'var(--text-muted)' : 'var(--signal-warning)' }}>{settings.visionProvider === 'disabled' ? 'Disabled' : 'Configured · health unknown'}</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: {settings.visionProvider === 'disabled' ? 'Vision capabilities disabled.' : 'Provider set. Use Test OCR / Test Vision to verify. OCR/vision pipeline is scaffolded — not yet wired.'}</p>
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn">Test OCR</button>
-                  <button className="btn">Test Vision</button>
-                </div>
-              </div>
-            </div>
-
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="form-group">
-                <label>Vision Provider</label>
-                <Select
-                  ariaLabel="Vision Provider"
-                  value={settings.visionProvider || 'disabled'}
-                  onChange={(v) => updateSettings({ visionProvider: v })}
-                  options={[
-                    { value: 'local', label: 'Local' },
-                    { value: 'cloud', label: 'Cloud' },
-                    { value: 'edge', label: 'Edge' },
-                    { value: 'disabled', label: 'Disabled' },
-                  ]}
-                />
-              </div>
-              <div className="form-group">
-                <label>Vision Model</label>
-                <Select
-                  ariaLabel="Vision Model"
-                  value={settings.visionModel || 'llava'}
-                  onChange={(v) => updateSettings({ visionModel: v })}
-                  options={[
-                    { value: 'llava', label: 'LLaVA' },
-                    { value: 'bakllava', label: 'BakLLaVA' },
-                    { value: 'moondream', label: 'Moondream' },
-                    { value: 'custom', label: 'Custom' },
-                  ]}
-                />
-              </div>
-              {settings.visionModel === 'custom' && (
-                <div className="form-group">
-                  <label>Custom Vision Model</label>
-                  <input type="text" name="customVisionModel" value={settings.customVisionModel || ''} onChange={handleChange} placeholder="Custom model name" className="glass-input" />
-                </div>
-              )}
-              <div className="form-group">
-                <label>OCR Engine</label>
-                <Select
-                  ariaLabel="OCR Engine"
-                  value={settings.ocrEngine || 'tesseract'}
-                  onChange={(v) => updateSettings({ ocrEngine: v })}
-                  options={[
-                    { value: 'tesseract', label: 'Tesseract' },
-                    { value: 'paddleocr', label: 'PaddleOCR' },
-                    { value: 'cloudocr', label: 'Cloud OCR' },
-                  ]}
-                />
-              </div>
-              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
-                <input type="checkbox" name="ocrAutoDetect" checked={settings.ocrAutoDetect || false} onChange={handleChange} id="ocrAutoDetect" />
-                <label htmlFor="ocrAutoDetect" style={{ margin: 0 }}>Auto-detect Scanned PDFs</label>
-              </div>
-              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
-                <input type="checkbox" name="ocrImageExtract" checked={settings.ocrImageExtract || false} onChange={handleChange} id="ocrImageExtract" />
-                <label htmlFor="ocrImageExtract" style={{ margin: 0 }}>Extract and OCR inline images</label>
-              </div>
-            </div>
-          </div>
+          </>
         );
 
       case 'storage':
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">Storage</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-                <button className="btn" style={{ background: 'rgba(255,255,255,0.1)' }}>Save</button>
-              </div>
+          <>
+            <StatusCard title="Storage" status="Not verified" detail="Use backend diagnostics before claiming read/write health." tone="muted" />
+            <div className="settings-grid">
+              <Field label="Storage Path">
+                <input className="glass-input" value={settings.storagePath || ''} onChange={(e) => updateSettings({ storagePath: e.target.value })} placeholder="default" />
+              </Field>
+              <Field label="Database Type">
+                <Select ariaLabel="Database Type" value={settings.databaseType || 'sqlite'} onChange={(databaseType) => updateSettings({ databaseType })} options={[
+                  { value: 'sqlite', label: 'SQLite (Local)' },
+                  { value: 'postgres', label: 'PostgreSQL (External)' }
+                ]} />
+              </Field>
             </div>
-            <p className="color-text-muted">Doctrine: Local sovereignty means maintaining complete control over persisted data footprints.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: '4px solid var(--text-muted)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Status:</strong> <span style={{ color: 'var(--text-muted)' }}>Not verified</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: Use Verify Integrity to check read/write access on the local path.</p>
-                </div>
-                <button className="btn">Verify Integrity</button>
-              </div>
-            </div>
-
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="form-group">
-                <label>Storage Path</label>
-                <input type="text" name="storagePath" value={settings.storagePath || ''} onChange={handleChange} placeholder="default" className="glass-input" />
-              </div>
-              <div className="form-group">
-                <label>Database Type</label>
-                <Select
-                  ariaLabel="Database Type"
-                  value={settings.databaseType || 'sqlite'}
-                  onChange={(v) => updateSettings({ databaseType: v })}
-                  options={[
-                    { value: 'sqlite', label: 'SQLite (Local)' },
-                    { value: 'postgres', label: 'PostgreSQL (External)' },
-                  ]}
-                />
-              </div>
-            </div>
-          </div>
+          </>
         );
 
       case 'privacy':
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">Privacy / Redaction</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-                <button className="btn" style={{ background: 'rgba(255,255,255,0.1)' }}>Save</button>
-              </div>
+          <>
+            <StatusCard
+              title="Privacy"
+              status={settings.privacyMode === 'strict' ? 'Strict local preference' : 'Cloud use may be allowed'}
+              detail="This is routing policy, not proof that every pipeline has enforced it yet."
+              tone={settings.privacyMode === 'strict' ? 'accent' : 'warning'}
+            />
+            <div className="settings-grid">
+              <Field label="Privacy Mode">
+                <Select ariaLabel="Privacy Mode" value={settings.privacyMode || 'strict'} onChange={(privacyMode) => updateSettings({ privacyMode: privacyMode as typeof settings.privacyMode })} options={[
+                  { value: 'strict', label: 'Strict (Local Only)' },
+                  { value: 'balanced', label: 'Balanced (Ask before Cloud)' },
+                  { value: 'none', label: 'Permissive (Cloud Allowed)' }
+                ]} />
+              </Field>
+              <CheckboxField label="Enable PII Redaction" checked={settings.redactionEnabled ?? true} onChange={(redactionEnabled) => updateSettings({ redactionEnabled })} />
+              <CheckboxField label="Send Anonymous Telemetry" checked={Boolean(settings.telemetryEnabled)} onChange={(telemetryEnabled) => updateSettings({ telemetryEnabled })} />
             </div>
-            <p className="color-text-muted">Doctrine: Leakage of sensitive artifacts is a catastrophic failure. Always sanitize before exfiltration.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: settings.privacyMode === 'strict' ? '4px solid #4caf50' : '4px solid #ff9800' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Status:</strong> <span style={{ color: settings.privacyMode === 'strict' ? '#4caf50' : '#ff9800' }}>{settings.privacyMode === 'strict' ? 'Strict Isolation' : 'Permissive Isolation'}</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: {settings.privacyMode === 'strict' ? 'Cloud vectors blocked.' : 'Cloud vectors permitted for certain operations.'}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="form-group">
-                <label>Privacy Mode</label>
-                <Select
-                  ariaLabel="Privacy Mode"
-                  value={settings.privacyMode || 'strict'}
-                  onChange={(v) => updateSettings({ privacyMode: v as typeof settings.privacyMode })}
-                  options={[
-                    { value: 'strict', label: 'Strict (Local Only)' },
-                    { value: 'balanced', label: 'Balanced (Ask before Cloud)' },
-                    { value: 'none', label: 'Permissive (Cloud Allowed)' },
-                  ]}
-                />
-              </div>
-              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
-                <input type="checkbox" name="redactionEnabled" checked={settings.redactionEnabled ?? true} onChange={handleChange} id="redactionEnabled" />
-                <label htmlFor="redactionEnabled" style={{ margin: 0 }}>Enable PII Redaction</label>
-              </div>
-              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
-                <input type="checkbox" name="telemetryEnabled" checked={settings.telemetryEnabled || false} onChange={handleChange} id="telemetryEnabled" />
-                <label htmlFor="telemetryEnabled" style={{ margin: 0 }}>Send Anonymous Telemetry</label>
-              </div>
-            </div>
-          </div>
+          </>
         );
 
       case 'routing':
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">Routing Rules</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-                <button className="btn" style={{ background: 'rgba(255,255,255,0.1)' }}>Save</button>
-              </div>
+          <>
+            <StatusCard title="Routing" status="Configured locally" detail="Rules are settings only until a real request exercises them." tone="accent" />
+            <div className="settings-grid">
+              <Field label="Primary Routing Strategy">
+                <Select ariaLabel="Primary Routing Strategy" value={settings.routingStrategy || 'prefer-local'} onChange={(routingStrategy) => updateSettings({ routingStrategy })} options={[
+                  { value: 'prefer-local', label: 'Prefer Local' },
+                  { value: 'prefer-cloud', label: 'Prefer Cloud' },
+                  { value: 'prefer-edge', label: 'Prefer Edge' }
+                ]} />
+              </Field>
+              <CheckboxField label="Privacy Strict" checked={Boolean(settings.routingPrivacyStrict)} onChange={(routingPrivacyStrict) => updateSettings({ routingPrivacyStrict })} />
+              <CheckboxField label="OCR Cloud Allowed" checked={Boolean(settings.routingOcrCloud)} onChange={(routingOcrCloud) => updateSettings({ routingOcrCloud })} />
+              <CheckboxField label="Large Context Cloud Allowed" checked={Boolean(settings.routingLargeContextCloud)} onChange={(routingLargeContextCloud) => updateSettings({ routingLargeContextCloud })} />
             </div>
-            <p className="color-text-muted">Doctrine: Intelligent traffic shaping maximizes capability while adhering strictly to privacy bounds.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: '4px solid #2196f3' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Status:</strong> <span style={{ color: '#2196f3' }}>Router Active</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: Rules are evaluated in top-down order.</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="form-group">
-                <label>Primary Routing Strategy</label>
-                <Select
-                  ariaLabel="Primary Routing Strategy"
-                  value={settings.routingStrategy || 'prefer-local'}
-                  onChange={(v) => updateSettings({ routingStrategy: v })}
-                  options={[
-                    { value: 'prefer-local', label: 'Prefer Local' },
-                    { value: 'prefer-cloud', label: 'Prefer Cloud' },
-                    { value: 'prefer-edge', label: 'Prefer Edge' },
-                  ]}
-                />
-              </div>
-              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
-                <input type="checkbox" name="routingPrivacyStrict" checked={settings.routingPrivacyStrict || false} onChange={handleChange} id="routingPrivacyStrict" />
-                <label htmlFor="routingPrivacyStrict" style={{ margin: 0 }}>Privacy Strict (Never use cloud for sensitive tags)</label>
-              </div>
-              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
-                <input type="checkbox" name="routingOcrCloud" checked={settings.routingOcrCloud || false} onChange={handleChange} id="routingOcrCloud" />
-                <label htmlFor="routingOcrCloud" style={{ margin: 0 }}>OCR Cloud Allowed (Allow sending images to cloud APIs)</label>
-              </div>
-              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
-                <input type="checkbox" name="routingLargeContextCloud" checked={settings.routingLargeContextCloud || false} onChange={handleChange} id="routingLargeContextCloud" />
-                <label htmlFor="routingLargeContextCloud" style={{ margin: 0 }}>Large Context Cloud Allowed (Bypass local for &gt;8k context)</label>
-              </div>
-            </div>
-          </div>
+          </>
         );
 
       case 'export-import':
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">Export / Import</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-              </div>
+          <>
+            <StatusCard title="Export / Import" status="Not wired" detail="Configuration export/import controls should stay disabled until implemented." tone="muted" />
+            <div className="settings-actions-row">
+              <button className="btn" disabled>Export Configuration</button>
+              <button className="btn" disabled>Import Configuration</button>
             </div>
-            <p className="color-text-muted">Doctrine: Continuity of operations requires portable configuration and state backups.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: '4px solid #2196f3' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Status:</strong> <span style={{ color: '#2196f3' }}>Ready</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: Export engine standing by.</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', gap: '1rem' }}>
-              <button className="btn">Export Configuration</button>
-              <button className="btn">Import Configuration</button>
-            </div>
-          </div>
+          </>
         );
 
       case 'diagnostics':
         return (
-          <div className="settings-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-              <h3 className="bracket-title">Diagnostics</h3>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn">Reset</button>
-              </div>
+          <>
+            <StatusCard
+              title="Sidecars"
+              status={sidecarsReady ? 'Ready' : 'Not ready'}
+              detail={hasStalePortOwner ? 'A required port is owned by an external process.' : sidecars?.lastError || sidecars?.backend.message || 'Waiting for Electron sidecar status.'}
+              tone={sidecarsReady ? 'healthy' : sidecars?.lastError || hasStalePortOwner ? 'error' : 'warning'}
+              action={<button className="btn" onClick={() => void refreshSidecarsOnce()}><RefreshCw size={14} /> Refresh</button>}
+            />
+            <div className="diagnostics-grid">
+              <div className="diagnostic-row"><span>Mode</span><strong>{sidecars?.mode || 'Unknown'}</strong></div>
+              <div className="diagnostic-row"><span>App version</span><strong>{sidecars?.appVersion || 'Unknown'}</strong></div>
+              <div className="diagnostic-row"><span>Data dir</span><strong title={sidecars?.dataDir}>{sidecars?.dataDir || 'Unknown'}</strong></div>
+              <div className="diagnostic-row"><span>Log path</span><strong title={sidecars?.logPath}>{sidecars?.logPath || 'Unknown'}</strong></div>
+              <div className="diagnostic-row"><span>Backend resource</span><strong title={sidecars?.resources.backendPath}>{sidecars?.resources.backendExists ? 'Present' : 'Missing'}</strong></div>
+              <div className="diagnostic-row"><span>Surreal resource</span><strong title={sidecars?.resources.surrealPath}>{sidecars?.resources.surrealExists ? 'Present' : 'Missing'}</strong></div>
+              <div className="diagnostic-row"><span>SurrealDB</span><strong>{sidecars?.surreal.phase || 'Unknown'} {sidecars?.surreal.pid ? `pid ${sidecars.surreal.pid}` : ''}</strong></div>
+              <div className="diagnostic-row"><span>Python API</span><strong>{sidecars?.backend.phase || 'Unknown'} {sidecars?.backend.pid ? `pid ${sidecars.backend.pid}` : ''}</strong></div>
+              <div className="diagnostic-row"><span>Port owners</span><strong>{sidecars?.ports.length ? sidecars.ports.map((port) => `${port.port}:${port.pid || 'none'}${port.staleExternal ? ' stale' : port.ownedByCodex ? ' owned' : ''}`).join(' / ') : 'Unknown'}</strong></div>
+              <div className="diagnostic-row"><span>Watchdog</span><strong>{sidecars?.watchdog.restartPending ? 'Restart pending' : sidecars?.watchdog.lastRestartReason || 'Idle'}</strong></div>
+              <div className="diagnostic-row"><span>Previous sidecar PIDs</span><strong>{sidecars?.resources.previousPids.length ? sidecars.resources.previousPids.join(', ') : 'None recorded'}</strong></div>
             </div>
-            <p className="color-text-muted">Doctrine: Obscured failures are unacceptable. Expose all subsystem states for analysis.</p>
-            
-            <div className="status-card glass-card" style={{ padding: '1rem', marginBottom: '1.5rem', borderLeft: '4px solid #4caf50' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p><strong>Status:</strong> <span style={{ color: '#4caf50' }}>All Systems Nominal</span></p>
-                  <p className="color-text-muted" style={{ fontSize: '0.85rem' }}>Diagnostic: App Version 1.0.5. No severe faults detected.</p>
-                </div>
-                <button className="btn">Generate Report</button>
-              </div>
+            <div className="settings-actions-row">
+              <button className="btn" onClick={() => void restartSidecars()}><RefreshCw size={14} /> Restart Sidecars</button>
+              <button className="btn" onClick={() => void handleOpenLog()}>Open Sidecar Log</button>
             </div>
-
-            <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div className="form-group">
-                <label>Log Level</label>
-                <Select
-                  ariaLabel="Log Level"
-                  value={settings.logLevel || 'info'}
-                  onChange={(v) => updateSettings({ logLevel: v })}
-                  options={[
-                    { value: 'debug', label: 'Debug' },
-                    { value: 'info', label: 'Info' },
-                    { value: 'warn', label: 'Warn' },
-                    { value: 'error', label: 'Error' },
-                  ]}
-                />
-              </div>
-              <div className="form-group" style={{ flexDirection: 'row', alignItems: 'center', gap: '10px' }}>
-                <input type="checkbox" name="debugMode" checked={settings.debugMode || false} onChange={handleChange} id="debugMode" />
-                <label htmlFor="debugMode" style={{ margin: 0 }}>Enable Developer Tools</label>
-              </div>
-              <button className="btn" style={{ width: 'fit-content' }}>View Logs</button>
-            </div>
-          </div>
+            {logResult && <div className="settings-note">{logResult}</div>}
+          </>
         );
-
-      default:
-        return null;
     }
   };
 
   return (
-    <div style={{ display: 'flex', height: '100%', gap: '2rem' }}>
-      {/* Sidebar Navigation */}
-      <div style={{ width: '250px', display: 'flex', flexDirection: 'column', gap: '0.5rem', borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: '1rem' }}>
-        <h2 style={{ marginBottom: '1rem', paddingLeft: '0.5rem' }}>Settings</h2>
+    <div className="settings-layout">
+      <aside className="settings-nav">
+        <div>
+          <h1>Settings</h1>
+          <p>Auto-saved local preferences and diagnostics.</p>
+        </div>
         {SECTIONS.map((section) => {
           const Icon = section.icon;
-          const isActive = activeTab === section.id;
+          const active = activeTab === section.id;
           return (
-            <button
-              key={section.id}
-              onClick={() => setActiveTab(section.id)}
-              className={`btn ${isActive ? 'active' : ''}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-start',
-                gap: '10px',
-                padding: '0.75rem 1rem',
-                border: isActive ? '1px solid var(--accent-primary)' : '1px solid transparent',
-                background: isActive ? 'var(--accent-veil)' : 'transparent',
-                textAlign: 'left',
-                boxShadow: isActive ? 'inset 3px 0 0 var(--accent-primary)' : 'none',
-                color: isActive ? 'var(--accent-primary)' : 'var(--text-muted)'
-              }}
-            >
-              <Icon size={18} className={isActive ? '' : 'color-text-muted'} />
-              <span className={isActive ? '' : 'color-text-muted'}>{section.label}</span>
+            <button key={section.id} onClick={() => setActiveTab(section.id)} className={active ? 'active' : ''}>
+              <Icon size={17} />
+              <span>{section.label}</span>
             </button>
           );
         })}
-      </div>
+      </aside>
 
-      {/* Main Content Area */}
-      <div style={{ flex: 1, overflowY: 'auto', paddingRight: '2rem' }}>
-        {renderTabContent()}
-      </div>
+      <section className="settings-content">
+        <div className="settings-header">
+          <div>
+            <div className="workspace-kicker">Auto-saved</div>
+            <h2>{sectionTitle}</h2>
+          </div>
+        </div>
+        {renderContent()}
+      </section>
     </div>
   );
 }

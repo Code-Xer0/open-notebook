@@ -12,7 +12,7 @@ export function KnowledgeAlerts() {
         {alerts.length > 0 ? alerts.map((alert, i) => {
           const isError = alert.type === 'error';
           const colorVar = isError ? 'var(--signal-error)' : 'var(--signal-warning)';
-          const bgVar = isError ? 'rgba(255, 85, 119, 0.05)' : 'rgba(245, 194, 107, 0.05)';
+          const bgVar = isError ? 'var(--danger-veil)' : 'var(--warning-veil)';
           
           return (
             <div key={i} style={{ padding: '12px', borderLeft: `2px solid ${colorVar}`, background: bgVar }}>
@@ -25,7 +25,7 @@ export function KnowledgeAlerts() {
           );
         }) : (
           <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', border: '1px dashed var(--border-color)', borderRadius: '4px' }}>
-            No active alerts.
+            No live alerts available.
           </div>
         )}
       </div>

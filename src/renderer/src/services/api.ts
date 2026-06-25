@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { imageCapsules } from './imageCapsules';
 
 export const API_BASE_URL = 'http://localhost:5055';
 
@@ -76,9 +77,7 @@ export const api = {
   // Sources
   sources: {
     list: () => apiClient.get('/sources').then(res => res.data),
-    create: (formData: FormData) => apiClient.post('/sources', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    }).then(res => res.data),
+    create: (formData: FormData) => apiClient.post('/sources', formData).then(res => res.data),
     createJson: (data: any) => apiClient.post('/sources/json', data).then(res => res.data),
     get: (id: string) => apiClient.get(`/sources/${id}`).then(res => res.data),
     update: (id: string, data: any) => apiClient.put(`/sources/${id}`, data).then(res => res.data),
@@ -122,5 +121,7 @@ export const api = {
   diagnostics: {
     version: () => apiClient.get('/version').then(res => res.data),
     telemetrySummary: () => apiClient.get('/telemetry/summary').then(res => res.data),
-  }
+  },
+
+  imageCapsules
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, LayoutTemplate, RefreshCcw, Loader2, PlayCircle, Trash2, Edit3, Plus, Settings } from 'lucide-react';
+import { Mic, LayoutTemplate, RefreshCcw, Loader2, PlayCircle, Trash2, Plus } from 'lucide-react';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { api } from '../../services/api';
@@ -22,7 +22,7 @@ export default function PodcastStudio() {
         <header>
           <h1 className="title" style={{ marginBottom: '0.5rem' }}>Podcast Studio</h1>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '1.1rem' }}>
-            Generate, manage, and explore multi-speaker podcasts with Codex Intelligence.
+            Generate and manage NotebookLM-style audio overviews from local notebook context.
           </p>
         </header>
 
@@ -33,7 +33,7 @@ export default function PodcastStudio() {
             style={{
               display: 'flex', alignItems: 'center', gap: '0.5rem',
               background: activeTab === 'episodes' ? 'var(--color-primary)' : 'var(--color-surface)',
-              color: activeTab === 'episodes' ? 'white' : 'var(--color-text-muted)',
+              color: activeTab === 'episodes' ? 'var(--shell-bg)' : 'var(--color-text-muted)',
               border: `1px solid ${activeTab === 'episodes' ? 'transparent' : 'var(--color-border)'}`,
               padding: '0.75rem 1.5rem',
               borderRadius: 'var(--radius-md)',
@@ -49,7 +49,7 @@ export default function PodcastStudio() {
             style={{
               display: 'flex', alignItems: 'center', gap: '0.5rem',
               background: activeTab === 'templates' ? 'var(--color-primary)' : 'var(--color-surface)',
-              color: activeTab === 'templates' ? 'white' : 'var(--color-text-muted)',
+              color: activeTab === 'templates' ? 'var(--shell-bg)' : 'var(--color-text-muted)',
               border: `1px solid ${activeTab === 'templates' ? 'transparent' : 'var(--color-border)'}`,
               padding: '0.75rem 1.5rem',
               borderRadius: 'var(--radius-md)',
@@ -73,6 +73,7 @@ function EpisodesTab() {
   const [episodes, setEpisodes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadEpisodes();
@@ -83,8 +84,10 @@ function EpisodesTab() {
       setLoading(true);
       const data = await api.podcasts.listEpisodes();
       setEpisodes(data);
+      setError(null);
     } catch (err) {
       console.error(err);
+      setError('Could not load audio overviews from the backend.');
     } finally {
       setLoading(false);
     }
@@ -94,13 +97,13 @@ function EpisodesTab() {
     try {
       setGenerating(true);
       await api.podcasts.generate({
-        topic: 'New Auto Generated Podcast',
+        topic: 'Untitled audio overview',
         duration_minutes: 5
       });
       await loadEpisodes();
     } catch (err) {
       console.error(err);
-      alert('Failed to generate podcast');
+      setError('Failed to submit an audio overview job.');
     } finally {
       setGenerating(false);
     }
@@ -111,7 +114,7 @@ function EpisodesTab() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h2 style={{ fontSize: '1.5rem', fontWeight: 600, marginBottom: '0.25rem', color: 'var(--color-text)' }}>Episodes Overview</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem' }}>Manage your generated podcast episodes</p>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem' }}>Live episodes from the local backend.</p>
         </div>
         <div style={{ display: 'flex', gap: '1rem' }}>
           <Button onClick={handleGenerate} disabled={generating} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -132,17 +135,23 @@ function EpisodesTab() {
         <SummaryBadge label="Total" value={episodes.length} />
       </div>
 
+      {error && (
+        <div style={{ color: 'var(--signal-error)', padding: '1rem', background: 'var(--danger-veil)', borderRadius: 'var(--radius-md)' }}>
+          {error}
+        </div>
+      )}
+
       {generating && (
         <section>
           <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1rem', color: 'var(--color-text)' }}>Processing</h3>
           <Card style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <div style={{ padding: '0.85rem', background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.2)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ padding: '0.85rem', background: 'var(--accent-veil)', border: '1px solid var(--accent-edge)', borderRadius: 'var(--radius-md)' }}>
                 <Loader2 size={24} color="var(--color-primary)" className="animate-spin" />
               </div>
               <div>
-                <h4 style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.25rem', color: 'var(--color-text)' }}>New Auto Generated Podcast</h4>
-                <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>Generating multi-speaker audio streams...</p>
+                <h4 style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.25rem', color: 'var(--color-text)' }}>Untitled audio overview</h4>
+                <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>Submitted to the backend. Live job status is not exposed here yet.</p>
               </div>
             </div>
           </Card>
@@ -158,7 +167,7 @@ function EpisodesTab() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {episodes.length > 0 ? episodes.map((ep: any, i: number) => (
-              <EpisodeCard key={i} title={ep.title || `Episode ${i+1}`} date={new Date().toLocaleDateString()} duration={ep.duration || 'Unknown'} />
+              <EpisodeCard key={i} title={ep.title || `Episode ${i+1}`} date={ep.created || ep.updated || 'Unknown'} duration={ep.duration || 'Unknown'} />
             )) : (
               <div style={{ color: 'var(--color-text-muted)' }}>No episodes found.</div>
             )}
@@ -191,12 +200,12 @@ function EpisodeCard({ title, date, duration }: { title: string, date: string, d
         onMouseOut={e => e.currentTarget.style.background = 'var(--color-surface)'}>
           <PlayCircle size={20} />
         </button>
-        <button style={{ 
-          background: 'var(--color-surface)', border: '1px solid var(--color-border)', 
-          color: '#ef4444', cursor: 'pointer', padding: '0.65rem', 
-          borderRadius: 'var(--radius-md)', transition: 'var(--transition)' 
+        <button style={{
+          background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+          color: 'var(--signal-error)', cursor: 'pointer', padding: '0.65rem',
+          borderRadius: 'var(--radius-md)', transition: 'var(--transition)'
         }}
-        onMouseOver={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
+        onMouseOver={e => e.currentTarget.style.background = 'var(--danger-veil)'}
         onMouseOut={e => e.currentTarget.style.background = 'var(--color-surface)'}>
           <Trash2 size={20} />
         </button>
@@ -212,7 +221,7 @@ function SummaryBadge({ label, value }: { label: string, value: number }) {
       padding: '0.35rem 1rem', borderRadius: '999px',
       border: '1px solid var(--color-border)',
       background: 'var(--color-surface)', fontSize: '0.9rem',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+      boxShadow: 'var(--shadow-glass)'
     }}>
       <span style={{ color: 'var(--color-text-muted)' }}>{label}</span>
       <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>{value}</span>
@@ -226,88 +235,13 @@ function TemplatesTab() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--color-text)' }}>Templates Workspace</h2>
         <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem' }}>
-          Manage your custom voices and podcast format configurations
+          Audio templates are not wired to backend persistence yet.
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-        <Card style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--color-text)' }}>Speaker Profiles</h3>
-              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>Manage AI voices and their characteristics</p>
-            </div>
-            <button style={{
-              background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-              color: 'var(--color-text)', borderRadius: 'var(--radius-md)', padding: '0.5rem',
-              cursor: 'pointer', transition: 'var(--transition)'
-            }}
-            onMouseOver={e => e.currentTarget.style.background = 'var(--color-surface-hover)'}
-            onMouseOut={e => e.currentTarget.style.background = 'var(--color-surface)'}>
-              <Plus size={18} />
-            </button>
-          </div>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <TemplateItem title="Tech Host (Alex)" description="Enthusiastic and clear narrator" icon={<Mic size={18} color="var(--color-primary)" />} />
-            <TemplateItem title="Guest Expert (Sarah)" description="Professional and insightful tone" icon={<Mic size={18} color="var(--color-primary)" />} />
-          </div>
-        </Card>
-
-        <Card style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--color-text)' }}>Episode Profiles</h3>
-              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', marginTop: '0.25rem' }}>Manage structure and pacing formats</p>
-            </div>
-            <button style={{
-              background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-              color: 'var(--color-text)', borderRadius: 'var(--radius-md)', padding: '0.5rem',
-              cursor: 'pointer', transition: 'var(--transition)'
-            }}
-            onMouseOver={e => e.currentTarget.style.background = 'var(--color-surface-hover)'}
-            onMouseOut={e => e.currentTarget.style.background = 'var(--color-surface)'}>
-              <Plus size={18} />
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            <TemplateItem title="Deep Dive" description="15-minute technical exploration" icon={<Settings size={18} color="var(--color-primary)" />} />
-            <TemplateItem title="News Summary" description="5-minute quick daily updates" icon={<Settings size={18} color="var(--color-primary)" />} />
-          </div>
-        </Card>
-      </div>
+      <Card style={{ color: 'var(--color-text-muted)' }}>
+        No audio templates have been loaded from the backend. Speaker and episode profile editing remains unavailable until that API is wired.
+      </Card>
     </div>
   );
-}
-
-function TemplateItem({ title, description, icon }: { title: string, description: string, icon: React.ReactNode }) {
-  return (
-    <div style={{ 
-      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      padding: '1rem', background: 'var(--color-surface)', 
-      border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
-      transition: 'var(--transition)'
-    }}
-    onMouseOver={e => { e.currentTarget.style.background = 'var(--color-surface-hover)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
-    onMouseOut={e => { e.currentTarget.style.background = 'var(--color-surface)'; e.currentTarget.style.transform = 'translateY(0)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <div style={{ padding: '0.5rem', background: 'rgba(99, 102, 241, 0.1)', borderRadius: 'var(--radius-sm)' }}>
-          {icon}
-        </div>
-        <div>
-          <h4 style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--color-text)' }}>{title}</h4>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', marginTop: '0.15rem' }}>{description}</p>
-        </div>
-      </div>
-      <button style={{ 
-        background: 'transparent', border: 'none', color: 'var(--color-text-muted)', 
-        cursor: 'pointer', padding: '0.5rem', transition: 'var(--transition)' 
-      }}
-      onMouseOver={e => e.currentTarget.style.color = 'var(--color-primary-hover)'}
-      onMouseOut={e => e.currentTarget.style.color = 'var(--color-text-muted)'}>
-        <Edit3 size={18} />
-      </button>
-    </div>
-  )
 }
