@@ -16,6 +16,13 @@ binaries = []
 hiddenimports = []
 spec_dir = Path(SPECPATH) if "SPECPATH" in globals() else Path.cwd()
 
+hiddenimports += [
+    "commands.source_commands",
+    "commands.embedding_commands",
+    "commands.podcast_commands",
+    "commands.voice_commands",
+]
+
 # Heavy / dynamically-imported packages — collect submodules + data + binaries.
 _packages = [
     "api",

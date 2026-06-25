@@ -2,40 +2,75 @@
   color-scheme: light dark;
   --native-color-scheme: light;
 
-  /* First-run light palette defaults; App.tsx overrides these on .theme-shell. */
+  /* Legacy Core Colors (Maintained for App.tsx injection/backward compatibility) */
   --color-primary: #0f6f7a;
   --color-secondary: #4f7d67;
   --color-tertiary: #8da2ad;
-  --color-accent: #bd5745;
+  --color-accent: #d97706; /* Shifted away from crimson red to an amber/orange accent */
   --color-bg: #f7f9fc;
   --color-surface: #ffffff;
-  --color-text: #25313d;
-  --color-warning: #a66a00;
-  --color-error: #c93755;
-  --color-success: #128754;
-  
-  /* Semantic Core Colors (Dynamic Layered Theming) */
-  --shell-bg: var(--color-bg);
-  --panel-bg: color-mix(in srgb, var(--color-surface) 78%, transparent);
-  --panel-bg-hover: color-mix(in srgb, var(--color-surface) 96%, transparent);
-  --panel-bg-solid: var(--color-surface);
-  --panel-border: color-mix(in srgb, var(--color-accent) 25%, transparent);
-  --panel-border-faint: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  --color-text: #1a202c;
+  --color-warning: #b45309;
+  --color-error: #be123c;
+  --color-success: #059669;
+
+  /* LAYERED THEME ARCHITECTURE */
+
+  /* 1. Background Layers */
+  --bg-base: var(--color-bg);
+  --bg-surface: var(--color-surface);
+  --bg-elevated: #ffffff;
+
+  /* 2. Foreground (Text) Layers */
+  --fg-strong: #000000;
+  --fg-main: var(--color-text);
+  --fg-muted: color-mix(in srgb, var(--color-text) 65%, transparent);
+  --fg-faint: color-mix(in srgb, var(--color-text) 40%, transparent);
+
+  /* 3. Primary (Brand) Layers */
+  --primary-bold: var(--color-primary);
+  --primary-dim: color-mix(in srgb, var(--color-primary) 60%, transparent);
+  --primary-faint: color-mix(in srgb, var(--color-primary) 15%, transparent);
+
+  /* 4. Secondary & Tertiary Layers */
+  --secondary-bold: var(--color-secondary);
+  --secondary-dim: color-mix(in srgb, var(--color-secondary) 50%, transparent);
+  --tertiary-base: var(--color-tertiary);
+
+  /* 5. Accent Layers */
+  --accent-bold: var(--color-accent);
+  --accent-dim: color-mix(in srgb, var(--color-accent) 50%, transparent);
+  --accent-faint: color-mix(in srgb, var(--color-accent) 15%, transparent);
+
+  /* Component-Specific Semantics */
+  --shell-bg: var(--bg-base);
+  --panel-bg: color-mix(in srgb, var(--bg-surface) 85%, transparent);
+  --panel-bg-hover: color-mix(in srgb, var(--bg-surface) 96%, transparent);
+  --panel-bg-solid: var(--bg-surface);
+
+  --panel-border: color-mix(in srgb, var(--color-text) 12%, transparent);
+  --panel-border-faint: color-mix(in srgb, var(--color-text) 6%, transparent);
+
   --panel-subtle: color-mix(in srgb, var(--color-text) 4%, transparent);
   --panel-subtle-strong: color-mix(in srgb, var(--color-text) 7%, transparent);
+
   --panel-sheen: color-mix(in srgb, var(--color-surface) 42%, transparent);
   --panel-sheen-faint: color-mix(in srgb, var(--color-surface) 18%, transparent);
-  --field-top-wash: color-mix(in srgb, #ffffff 68%, transparent);
+
+  --field-top-wash: color-mix(in srgb, var(--bg-elevated) 68%, transparent);
   --field-grid-mask: radial-gradient(ellipse at 50% 30%, black 30%, transparent 75%);
-  --danger-veil: color-mix(in srgb, var(--color-error) 9%, transparent);
-  --warning-veil: color-mix(in srgb, var(--color-warning) 8%, transparent);
+
   --window-control-hover: color-mix(in srgb, var(--color-text) 9%, transparent);
 
+  /* Status Veils */
+  --danger-veil: color-mix(in srgb, var(--color-error) 9%, transparent);
+  --warning-veil: color-mix(in srgb, var(--color-warning) 8%, transparent);
+
   /* Typography */
-  --text-main: var(--color-text);
-  --text-muted: color-mix(in srgb, var(--color-text) 68%, transparent);
-  --text-faint: color-mix(in srgb, var(--color-text) 42%, transparent);
-  --text-strong: color-mix(in srgb, var(--color-text) 96%, #111827 4%);
+  --text-main: var(--fg-main);
+  --text-muted: var(--fg-muted);
+  --text-faint: var(--fg-faint);
+  --text-strong: var(--fg-strong);
 
   /* Fonts */
   --font-heading: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
@@ -44,21 +79,21 @@
 
   /* Semantic Status Signals */
   --signal-healthy: var(--color-success);
-  --signal-processing: var(--color-primary);
+  --signal-processing: var(--primary-bold);
   --signal-warning: var(--color-warning);
   --signal-error: var(--color-error);
   --signal-idle: color-mix(in srgb, var(--color-text) 38%, transparent);
 
-  /* Accent Defaults (Dynamic) */
-  --accent-primary: var(--color-primary);
-  --accent-dim: color-mix(in srgb, var(--color-primary) 62%, transparent);
-  --accent-faint: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  /* Aliases to map old classes to semantic tokens temporarily where needed */
+  --accent-primary: var(--primary-bold);
+  --accent-dim: var(--primary-dim);
+  --accent-faint: var(--primary-faint);
   --accent-veil: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  --accent-bright: var(--color-secondary);
+  --accent-bright: var(--secondary-bold);
   --accent-edge: color-mix(in srgb, var(--color-primary) 28%, transparent);
 
   /* Depths & Shadows */
-  --shadow-glass: 0 20px 70px rgba(17, 24, 39, 0.1), inset 0 0 0 1px var(--panel-sheen);
+  --shadow-glass: 0 20px 70px rgba(17, 24, 39, 0.08), inset 0 0 0 1px var(--panel-sheen);
   --ease-glass: cubic-bezier(0.2, 0.8, 0.2, 1);
   --transition: all 0.2s var(--ease-glass);
 
@@ -73,7 +108,7 @@
   --font-size-sm: 12px;
   --font-size-xs: 10px;
 
-  /* Aliases to map old classes to semantic tokens temporarily where needed */
+  /* Fallback aliases for un-refactored code */
   --color-text-muted: var(--text-muted);
   --color-primary-hover: var(--accent-bright);
   --color-surface-hover: var(--panel-bg-hover);
@@ -96,59 +131,89 @@
 html[data-theme="light"] {
   color-scheme: light;
   background: #f7f9fc;
-  color: #25313d;
+  color: #1a202c;
 }
 
 html[data-theme="dark"] {
   color-scheme: dark;
   --native-color-scheme: dark;
-  --color-primary: #6dc8d5;
-  --color-secondary: #8cc7a4;
-  --color-tertiary: #8b9bab;
-  --color-accent: #ff9b7f;
-  --color-bg: #0f141a;
-  --color-surface: #171f27;
-  --color-text: #ecf3f6;
-  --color-warning: #f2b84b;
-  --color-error: #ff6b87;
-  --color-success: #4fcf8f;
-  background: #0f141a;
-  color: #ecf3f6;
+  --color-primary: #38bdf8; /* Vibrant cyan */
+  --color-secondary: #34d399; /* Mint green */
+  --color-tertiary: #94a3b8; /* Slate */
+  --color-accent: #fbbf24; /* Amber yellow instead of unreadable red */
+  --color-bg: #090e14; /* Deep, sleek background */
+  --color-surface: #131b24; /* Slightly elevated surface */
+  --color-text: #f1f5f9;
+  --color-warning: #f59e0b;
+  --color-error: #f43f5e; /* Rose instead of pure red */
+  --color-success: #10b981;
+  background: #090e14;
+  color: #f1f5f9;
 }
 
 .theme-shell {
   color-scheme: var(--native-color-scheme);
-  --shell-bg: var(--color-bg);
-  --panel-bg: color-mix(in srgb, var(--color-surface) 78%, transparent);
-  --panel-bg-hover: color-mix(in srgb, var(--color-surface) 96%, transparent);
-  --panel-bg-solid: var(--color-surface);
-  --panel-border: color-mix(in srgb, var(--color-accent) 25%, transparent);
-  --panel-border-faint: color-mix(in srgb, var(--color-accent) 10%, transparent);
+
+  /* Dynamic Injection re-evaluates all these */
+  --bg-base: var(--color-bg);
+  --bg-surface: var(--color-surface);
+  --bg-elevated: color-mix(in srgb, var(--color-surface) 95%, #ffffff 5%);
+
+  --fg-strong: color-mix(in srgb, var(--color-text) 95%, #000 5%);
+  --fg-main: var(--color-text);
+  --fg-muted: color-mix(in srgb, var(--color-text) 65%, transparent);
+  --fg-faint: color-mix(in srgb, var(--color-text) 40%, transparent);
+
+  --primary-bold: var(--color-primary);
+  --primary-dim: color-mix(in srgb, var(--color-primary) 60%, transparent);
+  --primary-faint: color-mix(in srgb, var(--color-primary) 15%, transparent);
+
+  --secondary-bold: var(--color-secondary);
+  --secondary-dim: color-mix(in srgb, var(--color-secondary) 50%, transparent);
+  --tertiary-base: var(--color-tertiary);
+
+  --accent-bold: var(--color-accent);
+  --accent-dim: color-mix(in srgb, var(--color-accent) 50%, transparent);
+  --accent-faint: color-mix(in srgb, var(--color-accent) 15%, transparent);
+
+  --shell-bg: var(--bg-base);
+  --panel-bg: color-mix(in srgb, var(--bg-surface) 85%, transparent);
+  --panel-bg-hover: color-mix(in srgb, var(--bg-surface) 96%, transparent);
+  --panel-bg-solid: var(--bg-surface);
+  --panel-border: color-mix(in srgb, var(--color-text) 12%, transparent);
+  --panel-border-faint: color-mix(in srgb, var(--color-text) 6%, transparent);
   --panel-subtle: color-mix(in srgb, var(--color-text) 4%, transparent);
   --panel-subtle-strong: color-mix(in srgb, var(--color-text) 7%, transparent);
   --panel-sheen: color-mix(in srgb, var(--color-surface) 42%, transparent);
   --panel-sheen-faint: color-mix(in srgb, var(--color-surface) 18%, transparent);
-  --field-top-wash: color-mix(in srgb, #ffffff 68%, transparent);
+
+  --field-top-wash: color-mix(in srgb, var(--bg-elevated) 68%, transparent);
   --field-grid-mask: radial-gradient(ellipse at 50% 30%, black 30%, transparent 75%);
+
   --danger-veil: color-mix(in srgb, var(--color-error) 9%, transparent);
   --warning-veil: color-mix(in srgb, var(--color-warning) 8%, transparent);
   --window-control-hover: color-mix(in srgb, var(--color-text) 9%, transparent);
-  --text-main: var(--color-text);
-  --text-muted: color-mix(in srgb, var(--color-text) 68%, transparent);
-  --text-faint: color-mix(in srgb, var(--color-text) 42%, transparent);
-  --text-strong: color-mix(in srgb, var(--color-text) 96%, #111827 4%);
+
+  --text-main: var(--fg-main);
+  --text-muted: var(--fg-muted);
+  --text-faint: var(--fg-faint);
+  --text-strong: var(--fg-strong);
+
   --signal-healthy: var(--color-success);
-  --signal-processing: var(--color-primary);
+  --signal-processing: var(--primary-bold);
   --signal-warning: var(--color-warning);
   --signal-error: var(--color-error);
   --signal-idle: color-mix(in srgb, var(--color-text) 38%, transparent);
-  --accent-primary: var(--color-primary);
-  --accent-dim: color-mix(in srgb, var(--color-primary) 62%, transparent);
-  --accent-faint: color-mix(in srgb, var(--color-primary) 16%, transparent);
-  --accent-veil: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  --accent-bright: var(--color-secondary);
-  --accent-edge: color-mix(in srgb, var(--color-primary) 28%, transparent);
-  --shadow-glass: 0 20px 70px rgba(17, 24, 39, 0.1), inset 0 0 0 1px var(--panel-sheen);
+
+  --accent-primary: var(--primary-bold);
+  --accent-dim: var(--primary-dim);
+  --accent-faint: var(--primary-faint);
+  --accent-veil: color-mix(in srgb, var(--primary-bold) 8%, transparent);
+  --accent-bright: var(--secondary-bold);
+  --accent-edge: color-mix(in srgb, var(--primary-bold) 28%, transparent);
+
+  --shadow-glass: 0 20px 70px rgba(17, 24, 39, 0.08), inset 0 0 0 1px var(--panel-sheen);
+
   --color-text-muted: var(--text-muted);
   --color-primary-hover: var(--accent-bright);
   --color-surface-hover: var(--panel-bg-hover);
@@ -166,30 +231,34 @@ html[data-theme="dark"] {
   --safe: var(--signal-healthy);
   --warn: var(--signal-warning);
   --bad: var(--signal-error);
+
   background: var(--shell-bg);
   color: var(--text-main);
 }
 
 .theme-shell[data-theme="dark"] {
   --native-color-scheme: dark;
+  --bg-elevated: color-mix(in srgb, var(--color-surface) 95%, #ffffff 8%);
+  --fg-strong: #ffffff;
+
   --panel-bg: color-mix(in srgb, var(--color-surface) 84%, transparent);
   --panel-bg-hover: color-mix(in srgb, var(--color-surface) 92%, var(--color-primary) 8%);
   --panel-bg-solid: color-mix(in srgb, var(--color-surface) 96%, #000 4%);
-  --panel-border: color-mix(in srgb, var(--color-primary) 24%, transparent);
-  --panel-border-faint: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  --panel-border: color-mix(in srgb, var(--color-text) 12%, transparent);
+  --panel-border-faint: color-mix(in srgb, var(--color-text) 6%, transparent);
   --panel-subtle: color-mix(in srgb, var(--color-text) 6%, transparent);
   --panel-subtle-strong: color-mix(in srgb, var(--color-text) 10%, transparent);
-  --panel-sheen: color-mix(in srgb, var(--color-text) 10%, transparent);
-  --panel-sheen-faint: color-mix(in srgb, var(--color-text) 5%, transparent);
+  --panel-sheen: color-mix(in srgb, var(--color-text) 8%, transparent);
+  --panel-sheen-faint: color-mix(in srgb, var(--color-text) 4%, transparent);
   --field-top-wash: color-mix(in srgb, var(--color-surface) 42%, transparent);
   --field-grid-mask: radial-gradient(ellipse at 50% 26%, black 18%, transparent 72%);
-  --text-muted: color-mix(in srgb, var(--color-text) 72%, transparent);
-  --text-faint: color-mix(in srgb, var(--color-text) 48%, transparent);
-  --text-strong: color-mix(in srgb, var(--color-text) 96%, #ffffff 4%);
+  --text-muted: var(--fg-muted);
+  --text-faint: var(--fg-faint);
+  --text-strong: var(--fg-strong);
   --accent-faint: color-mix(in srgb, var(--color-primary) 22%, transparent);
   --accent-veil: color-mix(in srgb, var(--color-primary) 12%, transparent);
   --accent-edge: color-mix(in srgb, var(--color-primary) 36%, transparent);
-  --shadow-glass: 0 20px 70px rgba(0, 0, 0, 0.36), inset 0 0 0 1px var(--panel-sheen);
+  --shadow-glass: 0 20px 70px rgba(0, 0, 0, 0.45), inset 0 0 0 1px var(--panel-sheen);
   --window-control-hover: color-mix(in srgb, var(--color-text) 12%, transparent);
 }
 
@@ -459,11 +528,11 @@ input[type="checkbox"] {
   cursor: pointer;
 }
 
-.btn:hover:not(:disabled) { 
-  border-color: var(--accent-dim); 
-  color: var(--accent-primary); 
-  background: var(--accent-veil); 
-  transform: translateY(-1px); 
+.btn:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+  color: var(--accent-primary);
+  background: var(--accent-veil);
+  transform: translateY(-1px);
 }
 
 .btn:active:not(:disabled) {
