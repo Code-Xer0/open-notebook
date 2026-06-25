@@ -614,6 +614,21 @@ function createWindow(): void {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const logStr = `CONSOLE [level ${level}]: ${message} (line ${line} in ${sourceId})\n`;
+    appendFileSync(join(app.getPath('userData'), 'renderer.log'), logStr, 'utf-8');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    const logStr = `PAGE LOAD FAILED: ${errorDescription} (${errorCode}) at ${validatedURL}\n`;
+    appendFileSync(join(app.getPath('userData'), 'renderer.log'), logStr, 'utf-8');
+  });
+
+  mainWindow.webContents.on('crashed', (_event, killed) => {
+    const logStr = `RENDERER CRASHED! Killed: ${killed}\n`;
+    appendFileSync(join(app.getPath('userData'), 'renderer.log'), logStr, 'utf-8');
+  });
+
   // Register window control handlers
   ipcMain.on('window-minimize', () => mainWindow.minimize())
   ipcMain.on('window-maximize', () => {

@@ -1,6 +1,5 @@
 import axios from 'axios';
 import { imageCapsules } from './imageCapsules';
-import { voiceLayer } from './voiceLayer';
 
 export const API_BASE_URL = 'http://localhost:5055';
 
@@ -125,6 +124,8 @@ export const api = {
   },
 
   imageCapsules
-  ,
-  voiceLayer
 };
+
+// Keep provider-specific service modules such as `voiceLayer` imported directly
+// by their feature screens. Re-exporting them here creates a circular import:
+// voiceLayer -> apiClient -> api -> voiceLayer, which blanks the packaged UI.
