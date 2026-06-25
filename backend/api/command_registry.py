@@ -11,6 +11,7 @@ EXPECTED_COMMAND_MODULES = [
     "commands.source_commands",
     "commands.embedding_commands",
     "commands.podcast_commands",
+    "commands.voice_commands",
 ]
 
 EXPECTED_COMMANDS = {
@@ -19,6 +20,8 @@ EXPECTED_COMMANDS = {
     "open_notebook.embed_note",
     "open_notebook.rebuild_embeddings",
     "open_notebook.generate_podcast",
+    "open_notebook.render_reading_manifest",
+    "open_notebook.regenerate_performance_take",
     "open_notebook.run_transformation",
 }
 

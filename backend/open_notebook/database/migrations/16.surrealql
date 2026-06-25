@@ -1,0 +1,147 @@
+-- Migration 16: Nexus Voice Layer
+-- Stores Voice Capsules, Reading Manifests, manuscript segments, takes, and audio assets.
+
+DEFINE TABLE IF NOT EXISTS voice_capsule SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS display_name ON TABLE voice_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS voice_type ON TABLE voice_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS provider ON TABLE voice_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS model ON TABLE voice_capsule TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS voice_id ON TABLE voice_capsule TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS version ON TABLE voice_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS status ON TABLE voice_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS rights_status ON TABLE voice_capsule TYPE string;
+DEFINE FIELD IF NOT EXISTS description ON TABLE voice_capsule TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS doctrine_card ON TABLE voice_capsule TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS tone_profile ON TABLE voice_capsule TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS provider_settings ON TABLE voice_capsule TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS allowed_use ON TABLE voice_capsule TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS forbidden_use ON TABLE voice_capsule TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS sample_audio_refs ON TABLE voice_capsule TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS calibration_text_refs ON TABLE voice_capsule TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS provenance ON TABLE voice_capsule TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS locked_at ON TABLE voice_capsule TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE voice_capsule DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE voice_capsule DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_voice_capsule_status ON TABLE voice_capsule FIELDS status;
+DEFINE INDEX IF NOT EXISTS idx_voice_capsule_provider ON TABLE voice_capsule FIELDS provider;
+
+DEFINE TABLE IF NOT EXISTS voice_capsule_revision SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS capsule ON TABLE voice_capsule_revision TYPE record<voice_capsule>;
+DEFINE FIELD IF NOT EXISTS event ON TABLE voice_capsule_revision TYPE string;
+DEFINE FIELD IF NOT EXISTS snapshot ON TABLE voice_capsule_revision TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS notes ON TABLE voice_capsule_revision TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE voice_capsule_revision DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE voice_capsule_revision DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_voice_revision_capsule ON TABLE voice_capsule_revision FIELDS capsule;
+
+DEFINE TABLE IF NOT EXISTS voice_character SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS display_name ON TABLE voice_character TYPE string;
+DEFINE FIELD IF NOT EXISTS aliases ON TABLE voice_character TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS description ON TABLE voice_character TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS doctrine_card ON TABLE voice_character TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE voice_character DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE voice_character DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_voice_character_name ON TABLE voice_character FIELDS display_name;
+
+DEFINE TABLE IF NOT EXISTS voice_assignment SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS character ON TABLE voice_assignment TYPE option<record<voice_character>>;
+DEFINE FIELD IF NOT EXISTS voice_capsule ON TABLE voice_assignment TYPE record<voice_capsule>;
+DEFINE FIELD IF NOT EXISTS assignment_type ON TABLE voice_assignment TYPE string;
+DEFINE FIELD IF NOT EXISTS canon_status ON TABLE voice_assignment TYPE string;
+DEFINE FIELD IF NOT EXISTS version ON TABLE voice_assignment TYPE string;
+DEFINE FIELD IF NOT EXISTS notes ON TABLE voice_assignment TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS locked_at ON TABLE voice_assignment TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE voice_assignment DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE voice_assignment DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_voice_assignment_capsule ON TABLE voice_assignment FIELDS voice_capsule;
+DEFINE INDEX IF NOT EXISTS idx_voice_assignment_character ON TABLE voice_assignment FIELDS character;
+
+DEFINE TABLE IF NOT EXISTS pronunciation_lexicon SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON TABLE pronunciation_lexicon TYPE string;
+DEFINE FIELD IF NOT EXISTS version ON TABLE pronunciation_lexicon TYPE string;
+DEFINE FIELD IF NOT EXISTS entries ON TABLE pronunciation_lexicon TYPE array<object>;
+DEFINE FIELD IF NOT EXISTS status ON TABLE pronunciation_lexicon TYPE string;
+DEFINE FIELD IF NOT EXISTS locked_at ON TABLE pronunciation_lexicon TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE pronunciation_lexicon DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE pronunciation_lexicon DEFAULT time::now() VALUE time::now();
+
+DEFINE TABLE IF NOT EXISTS reading_profile SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS name ON TABLE reading_profile TYPE string;
+DEFINE FIELD IF NOT EXISTS profile_type ON TABLE reading_profile TYPE string;
+DEFINE FIELD IF NOT EXISTS description ON TABLE reading_profile TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS performance_rules ON TABLE reading_profile TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS created ON TABLE reading_profile DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE reading_profile DEFAULT time::now() VALUE time::now();
+
+DEFINE TABLE IF NOT EXISTS manuscript SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS title ON TABLE manuscript TYPE string;
+DEFINE FIELD IF NOT EXISTS source ON TABLE manuscript TYPE option<record<source>>;
+DEFINE FIELD IF NOT EXISTS notebook ON TABLE manuscript TYPE option<record<notebook>>;
+DEFINE FIELD IF NOT EXISTS text ON TABLE manuscript TYPE string;
+DEFINE FIELD IF NOT EXISTS metadata ON TABLE manuscript TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS created ON TABLE manuscript DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE manuscript DEFAULT time::now() VALUE time::now();
+
+DEFINE TABLE IF NOT EXISTS manuscript_segment SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS manuscript ON TABLE manuscript_segment TYPE record<manuscript>;
+DEFINE FIELD IF NOT EXISTS chapter_id ON TABLE manuscript_segment TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS scene_id ON TABLE manuscript_segment TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS segment_type ON TABLE manuscript_segment TYPE string;
+DEFINE FIELD IF NOT EXISTS text ON TABLE manuscript_segment TYPE string;
+DEFINE FIELD IF NOT EXISTS speaker_id ON TABLE manuscript_segment TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS speaker_label ON TABLE manuscript_segment TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS speaker_confidence ON TABLE manuscript_segment TYPE float;
+DEFINE FIELD IF NOT EXISTS needs_review ON TABLE manuscript_segment TYPE bool;
+DEFINE FIELD IF NOT EXISTS resolver_notes ON TABLE manuscript_segment TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS order_index ON TABLE manuscript_segment TYPE int;
+DEFINE FIELD IF NOT EXISTS created ON TABLE manuscript_segment DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE manuscript_segment DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_manuscript_segment_parent ON TABLE manuscript_segment FIELDS manuscript;
+DEFINE INDEX IF NOT EXISTS idx_manuscript_segment_review ON TABLE manuscript_segment FIELDS needs_review;
+
+DEFINE TABLE IF NOT EXISTS reading_manifest SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS title ON TABLE reading_manifest TYPE string;
+DEFINE FIELD IF NOT EXISTS manuscript ON TABLE reading_manifest TYPE record<manuscript>;
+DEFINE FIELD IF NOT EXISTS reading_profile ON TABLE reading_manifest TYPE string;
+DEFINE FIELD IF NOT EXISTS narrator_voice ON TABLE reading_manifest TYPE option<record<voice_capsule>>;
+DEFINE FIELD IF NOT EXISTS character_voice_map ON TABLE reading_manifest TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS pronunciation_lexicon ON TABLE reading_manifest TYPE option<record<pronunciation_lexicon>>;
+DEFINE FIELD IF NOT EXISTS performance_rules ON TABLE reading_manifest TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS notebooks ON TABLE reading_manifest TYPE array<string>;
+DEFINE FIELD IF NOT EXISTS status ON TABLE reading_manifest TYPE string;
+DEFINE FIELD IF NOT EXISTS qa_status ON TABLE reading_manifest TYPE string;
+DEFINE FIELD IF NOT EXISTS source ON TABLE reading_manifest TYPE option<record<source>>;
+DEFINE FIELD IF NOT EXISTS locked_at ON TABLE reading_manifest TYPE option<datetime>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE reading_manifest DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE reading_manifest DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_reading_manifest_manuscript ON TABLE reading_manifest FIELDS manuscript;
+DEFINE INDEX IF NOT EXISTS idx_reading_manifest_status ON TABLE reading_manifest FIELDS status;
+
+DEFINE TABLE IF NOT EXISTS audio_asset SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS file_path ON TABLE audio_asset TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS duration ON TABLE audio_asset TYPE option<float>;
+DEFINE FIELD IF NOT EXISTS format ON TABLE audio_asset TYPE string;
+DEFINE FIELD IF NOT EXISTS sample_rate ON TABLE audio_asset TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS word_timestamps ON TABLE audio_asset TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS segment_timestamps ON TABLE audio_asset TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS sha256 ON TABLE audio_asset TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE audio_asset DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE audio_asset DEFAULT time::now() VALUE time::now();
+
+DEFINE TABLE IF NOT EXISTS performance_take SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS reading_manifest ON TABLE performance_take TYPE record<reading_manifest>;
+DEFINE FIELD IF NOT EXISTS segment ON TABLE performance_take TYPE record<manuscript_segment>;
+DEFINE FIELD IF NOT EXISTS voice_capsule ON TABLE performance_take TYPE option<record<voice_capsule>>;
+DEFINE FIELD IF NOT EXISTS audio_asset ON TABLE performance_take TYPE option<record<audio_asset>>;
+DEFINE FIELD IF NOT EXISTS provider ON TABLE performance_take TYPE string;
+DEFINE FIELD IF NOT EXISTS model ON TABLE performance_take TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS generation_settings ON TABLE performance_take TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS emotion_direction ON TABLE performance_take TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS status ON TABLE performance_take TYPE string;
+DEFINE FIELD IF NOT EXISTS qa_status ON TABLE performance_take TYPE string;
+DEFINE FIELD IF NOT EXISTS error_message ON TABLE performance_take TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS notes ON TABLE performance_take TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE performance_take DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE performance_take DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_take_manifest ON TABLE performance_take FIELDS reading_manifest;
+DEFINE INDEX IF NOT EXISTS idx_take_segment ON TABLE performance_take FIELDS segment;

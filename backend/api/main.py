@@ -26,10 +26,13 @@ from api.routers import (
     insights,
     image_capsules,
     languages,
+    manuscripts,
     models,
     notebooks,
     notes,
+    performance_takes,
     podcasts,
+    reading_manifests,
     search,
     settings,
     source_chat,
@@ -37,6 +40,7 @@ from api.routers import (
     speaker_profiles,
     transformations,
     ontology,
+    voice_capsules,
 )
 from api.routers import commands as commands_router
 from api.command_registry import ensure_command_modules
@@ -309,6 +313,10 @@ app.include_router(context.router, prefix="/api", tags=["context"])
 app.include_router(sources.router, prefix="/api", tags=["sources"])
 app.include_router(insights.router, prefix="/api", tags=["insights"])
 app.include_router(image_capsules.router, prefix="/api", tags=["image-capsules"])
+app.include_router(voice_capsules.router, prefix="/api", tags=["voice-capsules"])
+app.include_router(manuscripts.router, prefix="/api", tags=["manuscripts"])
+app.include_router(reading_manifests.router, prefix="/api", tags=["reading-manifests"])
+app.include_router(performance_takes.router, prefix="/api", tags=["performance-takes"])
 app.include_router(commands_router.router, prefix="/api", tags=["commands"])
 app.include_router(podcasts.router, prefix="/api", tags=["podcasts"])
 app.include_router(episode_profiles.router, prefix="/api", tags=["episode-profiles"])

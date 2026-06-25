@@ -1,0 +1,11 @@
+REMOVE TABLE IF EXISTS performance_take;
+REMOVE TABLE IF EXISTS audio_asset;
+REMOVE TABLE IF EXISTS reading_manifest;
+REMOVE TABLE IF EXISTS manuscript_segment;
+REMOVE TABLE IF EXISTS manuscript;
+REMOVE TABLE IF EXISTS reading_profile;
+REMOVE TABLE IF EXISTS pronunciation_lexicon;
+REMOVE TABLE IF EXISTS voice_assignment;
+REMOVE TABLE IF EXISTS voice_character;
+REMOVE TABLE IF EXISTS voice_capsule_revision;
+REMOVE TABLE IF EXISTS voice_capsule;
