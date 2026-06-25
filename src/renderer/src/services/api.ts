@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { imageCapsules } from './imageCapsules';
+import { voiceLayer } from './voiceLayer';
 
 export const API_BASE_URL = 'http://localhost:5055';
 
@@ -124,4 +125,6 @@ export const api = {
   },
 
   imageCapsules
+  ,
+  voiceLayer
 };

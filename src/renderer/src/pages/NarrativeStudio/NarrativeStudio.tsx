@@ -1,6 +1,7 @@
 import React from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { Book, Users, MapPin, Clock, Headphones, Mic, FileText, Plus } from 'lucide-react';
+import { Book, Users, MapPin, Clock, Headphones, Mic, FileText, Plus, FileAudio } from 'lucide-react';
+import { VoiceLayerStudio } from './VoiceLayerStudio';
 
 export default function NarrativeStudio() {
   const navigate = useNavigate();
@@ -15,6 +16,7 @@ export default function NarrativeStudio() {
     { id: 'locations', label: 'Locations', icon: <MapPin size={18} /> },
     { id: 'timelines', label: 'Timelines', icon: <Clock size={18} /> },
     { id: 'audiobooks', label: 'Audiobooks', icon: <Headphones size={18} /> },
+    { id: 'voice-layer', label: 'Voice Layer', icon: <FileAudio size={18} /> },
     { id: 'voice-cast', label: 'Voice Cast', icon: <Mic size={18} /> },
     { id: 'lore-reports', label: 'Lore Reports', icon: <FileText size={18} /> }
   ];
@@ -59,6 +61,7 @@ export default function NarrativeStudio() {
           <Route path="/locations" element={<PlaceholderTab title="Locations" />} />
           <Route path="/timelines" element={<PlaceholderTab title="Timelines" />} />
           <Route path="/audiobooks" element={<PlaceholderTab title="Audiobooks" />} />
+          <Route path="/voice-layer" element={<VoiceLayerStudio />} />
           <Route path="/voice-cast" element={<VoiceCastTab />} />
           <Route path="/lore-reports" element={<PlaceholderTab title="Lore Reports" />} />
         </Routes>
