@@ -13,8 +13,13 @@ router = APIRouter()
 
 @router.get("/health")
 async def get_health():
-    """System health check."""
-    return {"status": "healthy"}
+    """Shallow reachability check.
+
+    This endpoint intentionally proves only that the FastAPI process can answer
+    HTTP. Database, migrations, command workers, and providers are reported by
+    /api/version and /api/diagnostics.
+    """
+    return {"status": "reachable", "health": "shallow"}
 
 @router.get("/version")
 async def get_version():
@@ -60,6 +65,7 @@ async def get_diagnostics():
         "database": database,
         "version": version,
         "commandRegistry": version["commandRegistry"],
+        "workers": version["commandRegistry"].get("workerAvailability", {}),
     }
 
 @router.get("/telemetry/summary")
@@ -84,12 +90,15 @@ async def get_telemetry_summary():
     try:
         insights_res = await repo_query("SELECT id FROM source_insight")
         insights_count = len(insights_res) if insights_res else 0
-        citation_coverage = f"{min(100, insights_count * 2)}%" if insights_count else "0%"
     except Exception as e:
         logger.warning(f"Failed to query insights: {e}")
-        citation_coverage = "Unknown"
+        insights_count = "Unknown"
 
-    # For fields we don't have direct tables for yet, return honest 0 or Unknown
+    command_status = command_registry_status()
+    workers = command_status.get("workerAvailability", {})
+
+    # For fields we don't have direct tables for yet, return Unknown instead of
+    # turning source counts into fake processing/citation metrics.
     return {
         "sourceHealth": {
             "connected": connected,
@@ -97,7 +106,8 @@ async def get_telemetry_summary():
             "pending": "Unknown",
         },
         "knowledgeCoverage": {
-            "citationCoverage": citation_coverage,
+            "citationCoverage": "Unknown",
+            "insightCount": insights_count,
             "orphanContent": "Unknown",
             "unresolvedEntities": "Unknown",
         },
@@ -110,7 +120,10 @@ async def get_telemetry_summary():
             "queued": "Unknown",
             "parsing": "Unknown",
             "failed": "Unknown",
-            "completed": connected,
+            "completed": "Unknown",
+            "storedSources": connected,
+            "sourceWorker": workers.get("source", {"status": "unknown"}),
+            "embeddingWorker": workers.get("embedding", {"status": "unknown"}),
         },
         "narrativeIndex": {
             "characters": "Unknown",
@@ -122,5 +135,7 @@ async def get_telemetry_summary():
             "audiobookJobs": "Unknown",
             "reportJobs": "Unknown",
             "exportJobs": "Unknown",
+            "podcastWorker": workers.get("podcast", {"status": "unknown"}),
+            "voiceWorker": workers.get("voice", {"status": "unknown"}),
         }
     }

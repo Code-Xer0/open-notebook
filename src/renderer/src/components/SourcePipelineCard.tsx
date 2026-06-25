@@ -15,26 +15,30 @@ interface PipelineStage {
 export function SourcePipelineCard() {
   const { telemetry } = useStore();
   
-  const hasTelemetry = telemetry.sourceHealth.connected !== 'Unknown';
-  const hasCompleted = typeof telemetry.ingestionHealth.completed === 'number';
+  const storedSources = telemetry.ingestionHealth.storedSources ?? telemetry.sourceHealth.connected;
+  const hasStoredSourceCount = typeof storedSources === 'number';
   const hasRetrievalLatency = telemetry.retrievalHealth.latency !== 'Unknown';
+  const sourceWorkerStatus = telemetry.ingestionHealth.sourceWorker?.status || 'unknown';
+  const embeddingWorkerStatus = telemetry.ingestionHealth.embeddingWorker?.status || 'unknown';
+  const sourceWorkerUnavailable = sourceWorkerStatus === 'unavailable' || sourceWorkerStatus === 'missing';
+  const embeddingWorkerUnavailable = embeddingWorkerStatus === 'unavailable' || embeddingWorkerStatus === 'missing';
 
   const stages: PipelineStage[] = [
     {
       id: 'intake', label: 'Intake', icon: <DownloadCloud size={16} />,
-      status: hasTelemetry ? 'idle' : 'warning',
-      value: hasTelemetry ? (typeof telemetry.ingestionHealth.queued === 'number' && telemetry.ingestionHealth.queued > 0 ? telemetry.ingestionHealth.queued : 'Idle') : 'Unknown'
+      status: hasStoredSourceCount ? 'observed' : 'warning',
+      value: hasStoredSourceCount ? `${storedSources} stored` : 'Unknown'
     },
     {
       id: 'parse', label: 'Parse', icon: <FileText size={16} />,
-      status: hasTelemetry ? (typeof telemetry.ingestionHealth.parsing === 'number' && telemetry.ingestionHealth.parsing > 0 ? 'processing' : 'idle') : 'warning',
-      value: hasTelemetry ? telemetry.ingestionHealth.parsing : 'Unknown'
+      status: sourceWorkerUnavailable ? 'warning' : 'warning',
+      value: sourceWorkerUnavailable ? 'Worker unavailable' : 'Not verified'
     },
-    { id: 'chunk', label: 'Chunk', icon: <Scissors size={16} />, status: hasTelemetry ? 'idle' : 'warning', value: hasTelemetry ? 'Idle' : 'Unknown' },
-    { id: 'embed', label: 'Embed', icon: <Cpu size={16} />, status: hasTelemetry ? 'idle' : 'warning', value: hasTelemetry ? 'Idle' : 'Unknown' },
-    { id: 'index', label: 'Index', icon: <Network size={16} />, status: hasCompleted ? 'observed' : 'warning', value: hasCompleted ? telemetry.ingestionHealth.completed : 'Unknown' },
-    { id: 'retrieve', label: 'Retrieve', icon: <Search size={16} />, status: hasRetrievalLatency ? 'observed' : 'warning', value: hasRetrievalLatency ? telemetry.retrievalHealth.latency : 'Unknown' },
-    { id: 'synthesize', label: 'Synthesize', icon: <PenTool size={16} />, status: hasTelemetry ? 'idle' : 'warning', value: hasTelemetry ? 'Idle' : 'Unknown' }
+    { id: 'chunk', label: 'Chunk', icon: <Scissors size={16} />, status: 'warning', value: 'Not verified' },
+    { id: 'embed', label: 'Embed', icon: <Cpu size={16} />, status: 'warning', value: embeddingWorkerUnavailable ? 'Worker unavailable' : 'Not verified' },
+    { id: 'index', label: 'Index', icon: <Network size={16} />, status: 'warning', value: 'Not verified' },
+    { id: 'retrieve', label: 'DB latency', icon: <Search size={16} />, status: hasRetrievalLatency ? 'observed' : 'warning', value: hasRetrievalLatency ? telemetry.retrievalHealth.latency : 'Unknown' },
+    { id: 'synthesize', label: 'Synthesize', icon: <PenTool size={16} />, status: 'warning', value: 'Not wired' }
   ];
 
   return (
@@ -43,8 +47,8 @@ export function SourcePipelineCard() {
         <h3 style={{ fontSize: 'var(--font-size-sm)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, color: 'var(--text-strong)' }}>
           Ingestion & Synthesis Pipeline
         </h3>
-        <span style={{ fontSize: 'var(--font-size-xs)', color: hasTelemetry ? 'var(--accent-primary)' : 'var(--text-muted)', fontWeight: 600 }}>
-          {hasTelemetry ? 'TELEMETRY MEASURED' : 'TELEMETRY UNKNOWN'}
+        <span style={{ fontSize: 'var(--font-size-xs)', color: hasStoredSourceCount ? 'var(--accent-primary)' : 'var(--text-muted)', fontWeight: 600 }}>
+          {hasStoredSourceCount ? 'STORAGE MEASURED' : 'TELEMETRY UNKNOWN'}
         </span>
       </div>
 

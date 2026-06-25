@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   AlertTriangle,
-  AudioLines,
   BookOpenCheck,
   BrainCircuit,
   CheckCircle2,
@@ -21,7 +20,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
   Tags
 } from 'lucide-react';
 import { refreshSidecarsOnce } from '../../services/sidecars';
@@ -57,7 +55,7 @@ const statusLabel: Record<ManagedSidecarStatus['phase'], string> = {
 const statusColor: Record<ManagedSidecarStatus['phase'], string> = {
   idle: 'var(--text-muted)',
   starting: 'var(--signal-warning)',
-  online: 'var(--signal-healthy)',
+  online: 'var(--accent-primary)',
   offline: 'var(--text-muted)',
   error: 'var(--signal-error)',
   stopping: 'var(--signal-warning)'
@@ -166,7 +164,7 @@ export function NexusManager() {
     },
     {
       label: 'Migrations',
-      value: backend.status === 'online' ? 'Backend reachable; migration detail not checked here' : 'Not verified',
+      value: backend.status === 'online' ? 'API reachable; use Diagnostics for schema detail' : 'Not verified',
       phase: idlePhase,
       icon: <CheckCircle2 size={15} />
     },
@@ -194,10 +192,7 @@ export function NexusManager() {
             {ontologyProvenance.mode === 'database' ? 'Database ontology' : 'Mock ontology'}
           </span>
           <button className="btn" onClick={() => setActiveTab('queries')}>
-            <FileQuestion size={15} /> Compare sources
-          </button>
-          <button className="btn primary" onClick={() => setActiveTab('export')}>
-            <ShieldAlert size={15} /> Export draft
+            <FileQuestion size={15} /> Review query prompts
           </button>
         </div>
       </section>
@@ -376,7 +371,7 @@ export function NexusManager() {
                 <button key={test.id} onClick={() => setActiveTab('queries')}>
                   <FileQuestion size={14} />
                   <span>{test.query}</span>
-                  <strong>{test.readiness}</strong>
+                  <strong>{ontologyProvenance.mode === 'database' ? test.readiness : 'Mock prompt'}</strong>
                 </button>
               ))}
             </div>
@@ -395,20 +390,20 @@ export function NexusManager() {
           <div className="panel-heading">
             <div>
               <h2>Ask this notebook</h2>
-              <p>Grounded answer preview with citations and spoiler warnings.</p>
+              <p>{ontologyProvenance.mode === 'database' ? 'Database-backed answer preview.' : 'Curated mock preview; not a live query result.'}</p>
             </div>
             <MessageSquare size={17} />
           </div>
 
           <div className="ask-question">
-            What is the Cain/Oberon correction?
+            Preview question: What is the Cain/Oberon correction?
           </div>
 
           <div className="grounded-answer">
             <span className={`status-chip ${tagTone(selectedConflict.status)}`}>{selectedConflict.status}</span>
             <p>
-              Cain and Oberon must stay visually firewalled. The bald breach-coded hammer figure is Oberon; Cain is the
-              silver-haired gravity/stabilization command figure.
+              Cain and Oberon must stay visually firewalled in the curated Nexus package. The bald breach-coded hammer
+              figure is Oberon; Cain is the silver-haired gravity/stabilization command figure.
             </p>
             <div className="citation-row">
               {selectedConflict.citations.map((citation) => (
@@ -426,21 +421,15 @@ export function NexusManager() {
           </div>
 
           <div className="grounded-checklist">
-            <div><LockKeyhole size={14} /> Hard-lock source checked</div>
+            <div><LockKeyhole size={14} /> Hard-lock source review required</div>
             <div><EyeOff size={14} /> Hidden-truth boundary visible</div>
-            <div><AlertTriangle size={14} /> Deprecated phrasing blocked</div>
+            <div><AlertTriangle size={14} /> Deprecated phrasing flagged</div>
           </div>
 
           <div className="ask-actions">
-            <button className="btn" onClick={() => setActiveTab('queries')}>
-              <Sparkles size={14} /> Briefing
-            </button>
-            <button className="btn" onClick={() => setActiveTab('queries')}>
-              <AudioLines size={14} /> Audio Overview
-            </button>
-            <button className="btn" onClick={() => setActiveTab('export')}>
-              <ShieldAlert size={14} /> Export Draft
-            </button>
+            <span className="status-chip experimental">
+              <ShieldAlert size={14} /> Generation and export hidden until live source checks exist.
+            </span>
           </div>
         </aside>
 
@@ -456,7 +445,7 @@ export function NexusManager() {
             {notebookQueryTests.map((test) => (
               <button key={test.id} onClick={() => setActiveTab('queries')}>
                 <span>{test.query}</span>
-                <strong>{test.readiness}</strong>
+                <strong>{ontologyProvenance.mode === 'database' ? test.readiness : 'Mock prompt'}</strong>
                 <small>{test.citation}</small>
               </button>
             ))}

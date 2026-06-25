@@ -52,8 +52,8 @@ export function Topbar() {
       {/* Status Strip — honest backend connectivity (see services/health.ts) */}
       <div style={{ display: 'flex', gap: '16px', WebkitAppRegion: 'no-drag', marginRight: '24px' } as any}>
         <BackendStatus />
-        <span style={{ color: sidecarOnline ? 'var(--signal-healthy)' : 'var(--text-muted)' }}>
-          SIDECARS: {sidecarOnline ? 'READY' : 'CHECKING'}
+        <span style={{ color: sidecarOnline ? 'var(--accent-primary)' : 'var(--text-muted)' }}>
+          SIDECARS: {sidecarOnline ? 'OWNED' : 'CHECKING'}
         </span>
       </div>
       

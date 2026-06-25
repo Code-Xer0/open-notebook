@@ -76,7 +76,7 @@ export function Sidebar() {
           <FileText size={18} /> Sources
         </Link>
         <Link to="/podcasts" className={getBtnClass('/podcasts')} style={getLinkStyle('/podcasts')}>
-          <Headphones size={18} /> Audio Overview
+          <Headphones size={18} /> Audio Records
         </Link>
         <Link to="/studio" className={getBtnClass('/studio', false)} style={getLinkStyle('/studio', false)}>
           <Mic size={18} /> Narrative Studio
@@ -95,12 +95,12 @@ export function Sidebar() {
         padding: '12px',
         marginBottom: '12px'
       }}>
-        <span style={{ display: 'block', fontFamily: 'var(--font-heading)', fontSize: 'var(--font-size-xs)', color: isOnline ? 'var(--signal-healthy)' : 'var(--text-faint)' }}>
-          {isOnline ? 'LOCAL WORKSPACE' : 'WORKSPACE OFFLINE'}
+        <span style={{ display: 'block', fontFamily: 'var(--font-heading)', fontSize: 'var(--font-size-xs)', color: isOnline ? 'var(--accent-primary)' : 'var(--text-faint)' }}>
+          {isOnline ? 'API REACHABLE' : 'WORKSPACE OFFLINE'}
         </span>
         <p style={{ margin: '5px 0 0', color: 'var(--text-muted)', fontSize: 'var(--font-size-sm)', lineHeight: 1.3 }}>
           {isOnline
-            ? sidecarsReady ? 'Notebook data and sidecars are reachable.' : 'API reachable. Sidecar details are still syncing.'
+            ? sidecarsReady ? 'Notebook API and owned sidecar ports are reachable.' : 'API reachable. Sidecar ownership is still syncing.'
             : 'Waiting for the local backend before loading notebooks and sources.'}
         </p>
       </div>

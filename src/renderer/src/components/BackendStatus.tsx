@@ -4,14 +4,14 @@ import { useStore } from '../store/useStore';
 const LABELS: Record<string, string> = {
   unknown: 'UNKNOWN',
   connecting: 'CONNECTING',
-  online: 'ONLINE',
+  online: 'REACHABLE',
   offline: 'OFFLINE',
 };
 
 const COLORS: Record<string, string> = {
   unknown: 'var(--text-muted)',
   connecting: 'var(--signal-warning)',
-  online: 'var(--signal-healthy)',
+  online: 'var(--accent-primary)',
   offline: 'var(--signal-error)',
 };
 
@@ -25,13 +25,13 @@ export function BackendStatus({ compact = false }: { compact?: boolean }) {
       backend.lastChecked ? `Last checked ${new Date(backend.lastChecked).toLocaleTimeString([], { hour12: false })}` : 'Not yet checked'
     }>
       <span
-        className={backend.status === 'online' ? 'live-breathe' : backend.status === 'connecting' ? 'live-pulse' : undefined}
+        className={backend.status === 'connecting' ? 'live-pulse' : undefined}
         style={{
           width: '6px',
           height: '6px',
           borderRadius: '50%',
           background: color,
-          boxShadow: backend.status === 'online' ? `0 0 8px ${color}` : 'none',
+          boxShadow: backend.status === 'connecting' ? `0 0 8px ${color}` : 'none',
           ['--ring' as string]: 'rgba(245, 194, 107, 0.6)',
         } as React.CSSProperties}
       />

@@ -73,6 +73,10 @@ except Exception as _e:
 for _migration in (spec_dir / "open_notebook" / "database" / "migrations").glob("*.surrealql"):
     datas.append((str(_migration), "open_notebook/database/migrations"))
 
+for _prompt in (spec_dir / "prompts").glob("**/*.jinja"):
+    _relative = _prompt.relative_to(spec_dir / "prompts").parent
+    datas.append((str(_prompt), str(Path("ai_prompter") / "prompts" / _relative)))
+
 
 a = Analysis(
     ['run_api.py'],

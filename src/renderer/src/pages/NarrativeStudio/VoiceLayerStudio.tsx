@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, BookOpen, Check, FileAudio, Lock, Mic, RefreshCcw, Shield, UserRound, Volume2, X } from 'lucide-react';
+import { api } from '../../services/api';
 import { voiceLayer, type Manuscript, type ManuscriptSegment, type PerformanceTake, type ReadingManifest, type RightsStatus, type VoiceAssignment, type VoiceCapsule, type VoiceCharacter } from '../../services/voiceLayer';
 
 type TabId = 'library' | 'casting' | 'manuscript' | 'builder' | 'review';
@@ -27,6 +28,7 @@ export function VoiceLayerStudio() {
   const [selectedManifest, setSelectedManifest] = React.useState<string>('');
   const [message, setMessage] = React.useState<string>('Voice Layer uses heuristic/manual parsing until live providers return facts.');
   const [busy, setBusy] = React.useState(false);
+  const [speechProviderStatus, setSpeechProviderStatus] = React.useState<'unknown' | 'configured' | 'missing'>('unknown');
   const [voiceName, setVoiceName] = React.useState('Primary Narrator');
   const [characterName, setCharacterName] = React.useState('Terra');
   const [manuscriptTitle, setManuscriptTitle] = React.useState('Nexus Voice Smoke Chapter');
@@ -42,6 +44,8 @@ export function VoiceLayerStudio() {
         voiceLayer.manuscripts.list(),
         voiceLayer.manifests.list(),
       ]);
+      const credentialFacts = await api.credentials.status().catch(() => null);
+      setSpeechProviderStatus(credentialFacts?.configured?.openai && credentialFacts?.source?.openai === 'environment' ? 'configured' : 'missing');
       setCapsules(nextCapsules);
       setCharacters(nextCharacters);
       setAssignments(nextAssignments);
@@ -208,6 +212,14 @@ export function VoiceLayerStudio() {
   };
 
   const renderManifest = async (manifest: ReadingManifest) => {
+    if (speechProviderStatus !== 'configured') {
+      setMessage('Render blocked: OpenAI speech requires an OPENAI_API_KEY environment credential in this V1 adapter.');
+      return;
+    }
+    if (manifest.status !== 'locked') {
+      setMessage('Render blocked: lock the reading manifest before generating performance takes.');
+      return;
+    }
     const firstSegment = segments[0]?.id;
     const result = await voiceLayer.manifests.render(manifest.id, firstSegment ? [firstSegment] : undefined);
     setTakes(result.takes);
@@ -234,7 +246,7 @@ export function VoiceLayerStudio() {
       </div>
 
       <div style={styles.statusStrip}>
-        <Fact label="Provider" value="OpenAI speech adapter" tone="neutral" />
+        <Fact label="Provider" value={speechProviderStatus === 'configured' ? 'OpenAI speech configured' : speechProviderStatus === 'missing' ? 'provider missing' : 'unknown'} tone={speechProviderStatus === 'configured' ? 'neutral' : 'warn'} />
         <Fact label="Local engines" value="future adapters" tone="warn" />
         <Fact label="Parser" value="heuristic/manual" tone="warn" />
         <Fact label="Audio QA" value="not claimed until run" tone="neutral" />
@@ -346,9 +358,9 @@ export function VoiceLayerStudio() {
                 <p style={styles.muted}>Narrator: {capsules.find((item) => item.id === manifest.narratorVoiceId)?.displayName || 'Not assigned'}</p>
                 <p style={styles.muted}>Source: {manifest.sourceId || 'Not published to notebook'}</p>
                 <div style={styles.buttonRow}>
-                  <button style={styles.secondaryButton} onClick={() => lockManifest(manifest)}>Lock</button>
-                  <button style={styles.secondaryButton} onClick={() => renderManifest(manifest)}>Render First Line</button>
-                  <button style={styles.secondaryButton} onClick={() => voiceLayer.manifests.publish(manifest.id).then(refresh).catch(() => setMessage('Publish blocked: manifest must be locked and rights must be publishable.'))}>Publish</button>
+                  <button style={styles.secondaryButton} onClick={() => lockManifest(manifest)} disabled={manifest.status === 'locked'}>Lock</button>
+                  <button style={styles.secondaryButton} disabled={speechProviderStatus !== 'configured' || manifest.status !== 'locked'} onClick={() => renderManifest(manifest)}>Render First Line</button>
+                  <button style={styles.secondaryButton} disabled={manifest.status !== 'locked'} onClick={() => voiceLayer.manifests.publish(manifest.id).then(refresh).catch(() => setMessage('Publish blocked: manifest must be locked and rights must be publishable.'))}>Publish</button>
                 </div>
               </article>
             ))}

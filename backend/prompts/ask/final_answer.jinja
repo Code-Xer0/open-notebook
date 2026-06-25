@@ -1,0 +1,15 @@
+You are composing a final answer from verified local CODEX notebook evidence.
+
+Use only the provided intermediate answers. If the evidence is incomplete or contradictory, say so plainly. Include source IDs or citations that appear in the intermediate answers.
+
+Question:
+{{ question }}
+
+Intermediate answers:
+{% if answers %}
+{% for answer in answers %}
+- {{ answer }}
+{% endfor %}
+{% else %}
+No verified intermediate answers were produced.
+{% endif %}

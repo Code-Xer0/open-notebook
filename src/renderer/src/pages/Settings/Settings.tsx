@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { ModelSelect } from '../../components/ModelSelect';
 import { Select } from '../../components/Select';
+import { api } from '../../services/api';
 import { openSidecarLog, refreshSidecarsOnce, restartSidecars } from '../../services/sidecars';
 import { useStore } from '../../store/useStore';
 import { codexDarkTheme, codexLightTheme, themePresets, themeSwatchKeys, type ThemeMode } from '../../theme';
@@ -40,6 +41,12 @@ const SECTIONS = [
 
 type SectionId = (typeof SECTIONS)[number]['id'];
 type Tone = 'healthy' | 'warning' | 'error' | 'muted' | 'accent';
+
+interface CredentialStatus {
+  configured?: Record<string, boolean>;
+  source?: Record<string, string>;
+  encryption_configured?: boolean;
+}
 
 const toneColor: Record<Tone, string> = {
   healthy: 'var(--signal-healthy)',
@@ -78,10 +85,10 @@ function Field({ label, children, hint }: { label: string; children: React.React
   );
 }
 
-function CheckboxField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+function CheckboxField({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
   return (
-    <label className="settings-check">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <label className="settings-check" style={{ opacity: disabled ? 0.65 : 1 }}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       <span>{label}</span>
     </label>
   );
@@ -91,10 +98,39 @@ export function Settings() {
   const { settings, updateSettings, backend, sidecars } = useStore();
   const [activeTab, setActiveTab] = React.useState<SectionId>('general');
   const [logResult, setLogResult] = React.useState<string | null>(null);
+  const [credentialStatus, setCredentialStatus] = React.useState<CredentialStatus | null>(null);
+  const [credentialStatusError, setCredentialStatusError] = React.useState<string | null>(null);
 
   const hasStalePortOwner = Boolean(sidecars?.ports.some((port) => port.staleExternal));
   const sidecarsReady = sidecars?.surreal.phase === 'online' && sidecars?.backend.phase === 'online' && !hasStalePortOwner;
-  const backendTone: Tone = backend.status === 'online' ? 'healthy' : backend.status === 'offline' ? 'error' : 'warning';
+  const backendTone: Tone = backend.status === 'online' ? 'accent' : backend.status === 'offline' ? 'error' : 'warning';
+
+  React.useEffect(() => {
+    let cancelled = false;
+    async function loadCredentialStatus() {
+      if (backend.status !== 'online') {
+        setCredentialStatus(null);
+        setCredentialStatusError(null);
+        return;
+      }
+      try {
+        const status = await api.credentials.status();
+        if (!cancelled) {
+          setCredentialStatus(status);
+          setCredentialStatusError(null);
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setCredentialStatus(null);
+          setCredentialStatusError(error?.response?.data?.detail || error?.message || 'Credential status unavailable');
+        }
+      }
+    }
+    void loadCredentialStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, [backend.status]);
 
   async function handleOpenLog() {
     const result = await openSidecarLog();
@@ -110,7 +146,7 @@ export function Settings() {
           <>
             <StatusCard
               title="Backend"
-              status={backend.status === 'online' ? `Connected${backend.version ? ` - v${backend.version}` : ''}` : backend.status === 'offline' ? 'Offline' : backend.status === 'connecting' ? 'Connecting' : 'Unknown'}
+              status={backend.status === 'online' ? `Reachable${backend.version ? ` - v${backend.version}` : ''}` : backend.status === 'offline' ? 'Offline' : backend.status === 'connecting' ? 'Connecting' : 'Unknown'}
               detail={backend.status === 'online' ? 'Local API is reachable on 127.0.0.1:5055.' : 'Notebook data, sources, and grounded chat require the local API.'}
               tone={backendTone}
             />
@@ -303,28 +339,41 @@ export function Settings() {
           </>
         );
 
-      case 'cloud-providers':
+      case 'cloud-providers': {
+        const providerRows = ['openai', 'anthropic', 'google', 'elevenlabs', 'openai_compatible'];
+        const configuredProviders = providerRows.filter((provider) => credentialStatus?.configured?.[provider]);
         return (
           <>
             <StatusCard
               title="Cloud Providers"
-              status={(settings.openaiApiKey || settings.anthropicApiKey || settings.googleApiKey) ? 'Configured - not verified' : 'Not configured'}
-              detail="Provider keys are local settings here. A provider test must succeed before showing healthy."
-              tone={(settings.openaiApiKey || settings.anthropicApiKey || settings.googleApiKey) ? 'warning' : 'muted'}
+              status={credentialStatusError ? 'Status unavailable' : configuredProviders.length ? 'Backend credentials present - not tested here' : 'No backend credentials configured'}
+              detail={credentialStatusError || 'Provider truth comes from backend credential records and explicit credential tests, not renderer localStorage fields.'}
+              tone={credentialStatusError ? 'error' : configuredProviders.length ? 'warning' : 'muted'}
             />
             <div className="settings-grid">
-              <Field label="OpenAI API Key">
-                <input className="glass-input" type="password" value={settings.openaiApiKey || ''} onChange={(e) => updateSettings({ openaiApiKey: e.target.value })} placeholder="Not configured" />
-              </Field>
-              <Field label="Anthropic API Key">
-                <input className="glass-input" type="password" value={settings.anthropicApiKey || ''} onChange={(e) => updateSettings({ anthropicApiKey: e.target.value })} placeholder="Not configured" />
-              </Field>
-              <Field label="Google API Key">
-                <input className="glass-input" type="password" value={settings.googleApiKey || ''} onChange={(e) => updateSettings({ googleApiKey: e.target.value })} placeholder="Not configured" />
-              </Field>
+              {providerRows.map((provider) => {
+                const configured = Boolean(credentialStatus?.configured?.[provider]);
+                const source = credentialStatus?.source?.[provider] || 'none';
+                return (
+                  <StatusCard
+                    key={provider}
+                    title={provider.replace('_', ' ')}
+                    status={configured ? `Configured via ${source}` : 'Not configured'}
+                    detail={configured ? 'Run a backend credential test before treating this provider as usable.' : 'No backend credential or environment key is reported for this provider.'}
+                    tone={configured ? 'warning' : 'muted'}
+                  />
+                );
+              })}
+              <StatusCard
+                title="Credential Encryption"
+                status={credentialStatus?.encryption_configured ? 'Configured' : 'Not verified'}
+                detail="Creating or updating backend credential records requires the backend encryption key."
+                tone={credentialStatus?.encryption_configured ? 'accent' : 'muted'}
+              />
             </div>
           </>
         );
+      }
 
       case 'edge-nodes':
         return (
@@ -388,25 +437,20 @@ export function Settings() {
             />
             <div className="settings-grid">
               <Field label="Vision Provider">
-                <Select ariaLabel="Vision Provider" value={settings.visionProvider || 'disabled'} onChange={(visionProvider) => updateSettings({ visionProvider })} options={[
+                <Select ariaLabel="Vision Provider" value="disabled" disabled onChange={() => undefined} options={[
                   { value: 'disabled', label: 'Disabled' },
-                  { value: 'local', label: 'Local' },
-                  { value: 'cloud', label: 'Cloud' },
-                  { value: 'edge', label: 'Edge' }
                 ]} />
               </Field>
               <Field label="Vision Model">
-                <input className="glass-input" value={settings.visionModel || ''} onChange={(e) => updateSettings({ visionModel: e.target.value })} placeholder="llava" />
+                <input className="glass-input" value="" disabled onChange={() => undefined} placeholder="Not wired" />
               </Field>
               <Field label="OCR Engine">
-                <Select ariaLabel="OCR Engine" value={settings.ocrEngine || 'tesseract'} onChange={(ocrEngine) => updateSettings({ ocrEngine })} options={[
-                  { value: 'tesseract', label: 'Tesseract' },
-                  { value: 'paddleocr', label: 'PaddleOCR' },
-                  { value: 'cloudocr', label: 'Cloud OCR' }
+                <Select ariaLabel="OCR Engine" value="disabled" disabled onChange={() => undefined} options={[
+                  { value: 'disabled', label: 'Not wired' }
                 ]} />
               </Field>
-              <CheckboxField label="Auto-detect scanned PDFs" checked={Boolean(settings.ocrAutoDetect)} onChange={(ocrAutoDetect) => updateSettings({ ocrAutoDetect })} />
-              <CheckboxField label="Extract and OCR inline images" checked={Boolean(settings.ocrImageExtract)} onChange={(ocrImageExtract) => updateSettings({ ocrImageExtract })} />
+              <CheckboxField label="Auto-detect scanned PDFs" checked={false} disabled onChange={() => undefined} />
+              <CheckboxField label="Extract and OCR inline images" checked={false} disabled onChange={() => undefined} />
             </div>
           </>
         );
@@ -420,9 +464,8 @@ export function Settings() {
                 <input className="glass-input" value={settings.storagePath || ''} onChange={(e) => updateSettings({ storagePath: e.target.value })} placeholder="default" />
               </Field>
               <Field label="Database Type">
-                <Select ariaLabel="Database Type" value={settings.databaseType || 'sqlite'} onChange={(databaseType) => updateSettings({ databaseType })} options={[
-                  { value: 'sqlite', label: 'SQLite (Local)' },
-                  { value: 'postgres', label: 'PostgreSQL (External)' }
+                <Select ariaLabel="Database Type" value="surrealdb" disabled onChange={() => undefined} options={[
+                  { value: 'surrealdb', label: 'SurrealDB sidecar' }
                 ]} />
               </Field>
             </div>

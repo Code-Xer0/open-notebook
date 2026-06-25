@@ -29,10 +29,10 @@ export function KnowledgeHealthScore() {
         {showDetails && (
           <div style={{ fontSize: '12px', color: 'var(--text-main)', background: 'var(--panel-bg)', padding: '12px', borderRadius: '4px', border: '1px solid var(--border-color)', marginTop: '8px' }}>
             <h4 style={{ margin: '0 0 8px 0', fontSize: '12px', color: 'var(--text-muted)' }}>What is Knowledge Health?</h4>
-            <p style={{ margin: '0 0 8px 0' }}>This score represents the reliability and cohesiveness of your knowledge base.</p>
+            <p style={{ margin: '0 0 8px 0' }}>This score is not computed in the current build.</p>
             <ul style={{ margin: 0, paddingLeft: '16px', color: 'var(--text-muted)' }}>
-              <li><strong>Improves by:</strong> High citation coverage, resolved entities, successful ingestions.</li>
-              <li><strong>Degrades by:</strong> Orphan content, broken citations, conflicting timelines, failed sources.</li>
+              <li><strong>Future inputs:</strong> citation checks, entity resolution, ingestion outcomes.</li>
+              <li><strong>Current state:</strong> unknown until those checks are wired and verified.</li>
             </ul>
           </div>
         )}

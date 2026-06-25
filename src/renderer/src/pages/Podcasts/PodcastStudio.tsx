@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, LayoutTemplate, RefreshCcw, Loader2, PlayCircle, Trash2, Plus } from 'lucide-react';
-import { Button } from '../../components/Button';
+import { Mic, LayoutTemplate, RefreshCcw, Loader2, AlertTriangle, ExternalLink } from 'lucide-react';
 import { Card } from '../../components/Card';
 import { api } from '../../services/api';
+import { useStore } from '../../store/useStore';
 
 export default function PodcastStudio() {
   const [activeTab, setActiveTab] = useState<'episodes' | 'templates'>('episodes');
@@ -22,7 +22,7 @@ export default function PodcastStudio() {
         <header>
           <h1 className="title" style={{ marginBottom: '0.5rem' }}>Podcast Studio</h1>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '1.1rem' }}>
-            Generate and manage NotebookLM-style audio overviews from local notebook context.
+            Review audio overview records from the local backend. Generation controls stay hidden until a real podcast worker is available.
           </p>
         </header>
 
@@ -70,10 +70,11 @@ export default function PodcastStudio() {
 }
 
 function EpisodesTab() {
+  const { telemetry } = useStore();
   const [episodes, setEpisodes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const podcastWorkerStatus = telemetry.studioQueue.podcastWorker?.status || 'unknown';
 
   useEffect(() => {
     loadEpisodes();
@@ -93,33 +94,14 @@ function EpisodesTab() {
     }
   };
 
-  const handleGenerate = async () => {
-    try {
-      setGenerating(true);
-      await api.podcasts.generate({
-        topic: 'Untitled audio overview',
-        duration_minutes: 5
-      });
-      await loadEpisodes();
-    } catch (err) {
-      console.error(err);
-      setError('Failed to submit an audio overview job.');
-    } finally {
-      setGenerating(false);
-    }
-  };
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: 600, marginBottom: '0.25rem', color: 'var(--color-text)' }}>Episodes Overview</h2>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem' }}>Live episodes from the local backend.</p>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 600, marginBottom: '0.25rem', color: 'var(--color-text)' }}>Episode Records</h2>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem' }}>Only backend records and existing audio assets are shown here.</p>
         </div>
         <div style={{ display: 'flex', gap: '1rem' }}>
-          <Button onClick={handleGenerate} disabled={generating} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {generating ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />} Generate New
-          </Button>
           <button onClick={loadEpisodes} style={{ 
             display: 'flex', alignItems: 'center', gap: '0.5rem',
             padding: '0.75rem 1rem', background: 'var(--color-surface)',
@@ -135,31 +117,24 @@ function EpisodesTab() {
         <SummaryBadge label="Total" value={episodes.length} />
       </div>
 
+      <Card style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', color: 'var(--color-text-muted)' }}>
+        <AlertTriangle size={18} color="var(--signal-warning)" style={{ flexShrink: 0 }} />
+        <div>
+          <strong style={{ color: 'var(--color-text)' }}>Generation unavailable</strong>
+          <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>
+            Podcast worker status is {podcastWorkerStatus}. CODEX will not submit audio overview jobs until diagnostics report a real worker.
+          </p>
+        </div>
+      </Card>
+
       {error && (
         <div style={{ color: 'var(--signal-error)', padding: '1rem', background: 'var(--danger-veil)', borderRadius: 'var(--radius-md)' }}>
           {error}
         </div>
       )}
 
-      {generating && (
-        <section>
-          <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1rem', color: 'var(--color-text)' }}>Processing</h3>
-          <Card style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <div style={{ padding: '0.85rem', background: 'var(--accent-veil)', border: '1px solid var(--accent-edge)', borderRadius: 'var(--radius-md)' }}>
-                <Loader2 size={24} color="var(--color-primary)" className="animate-spin" />
-              </div>
-              <div>
-                <h4 style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.25rem', color: 'var(--color-text)' }}>Untitled audio overview</h4>
-                <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>Submitted to the backend. Live job status is not exposed here yet.</p>
-              </div>
-            </div>
-          </Card>
-        </section>
-      )}
-
       <section>
-        <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1rem', color: 'var(--color-text)' }}>Completed</h3>
+        <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '1rem', color: 'var(--color-text)' }}>Backend Records</h3>
         {loading ? (
           <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
             <Loader2 size={32} className="animate-spin" color="var(--color-primary)" />
@@ -167,7 +142,14 @@ function EpisodesTab() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {episodes.length > 0 ? episodes.map((ep: any, i: number) => (
-              <EpisodeCard key={i} title={ep.title || `Episode ${i+1}`} date={ep.created || ep.updated || 'Unknown'} duration={ep.duration || 'Unknown'} />
+              <EpisodeCard
+                key={ep.id || i}
+                title={ep.title || ep.name || `Episode ${i+1}`}
+                date={ep.created || ep.updated || 'Unknown'}
+                duration={ep.duration || 'Unknown'}
+                jobStatus={ep.job_status || 'unknown'}
+                audioUrl={ep.audio_url ? api.podcasts.getAudioUrl(ep.id) : null}
+              />
             )) : (
               <div style={{ color: 'var(--color-text-muted)' }}>No episodes found.</div>
             )}
@@ -178,7 +160,7 @@ function EpisodesTab() {
   );
 }
 
-function EpisodeCard({ title, date, duration }: { title: string, date: string, duration: string }) {
+function EpisodeCard({ title, date, duration, jobStatus, audioUrl }: { title: string, date: string, duration: string, jobStatus: string, audioUrl: string | null }) {
   return (
     <Card style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
@@ -187,28 +169,22 @@ function EpisodeCard({ title, date, duration }: { title: string, date: string, d
         </div>
         <div>
           <h4 style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.25rem', color: 'var(--color-text)' }}>{title}</h4>
-          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>{date} • {duration}</p>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>{date} • {duration} • {jobStatus}</p>
         </div>
       </div>
       <div style={{ display: 'flex', gap: '0.5rem' }}>
-        <button style={{ 
-          background: 'var(--color-surface)', border: '1px solid var(--color-border)', 
-          color: 'var(--color-text)', cursor: 'pointer', padding: '0.65rem', 
-          borderRadius: 'var(--radius-md)', transition: 'var(--transition)' 
-        }} 
-        onMouseOver={e => e.currentTarget.style.background = 'var(--color-surface-hover)'}
-        onMouseOut={e => e.currentTarget.style.background = 'var(--color-surface)'}>
-          <PlayCircle size={20} />
-        </button>
-        <button style={{
-          background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-          color: 'var(--signal-error)', cursor: 'pointer', padding: '0.65rem',
-          borderRadius: 'var(--radius-md)', transition: 'var(--transition)'
-        }}
-        onMouseOver={e => e.currentTarget.style.background = 'var(--danger-veil)'}
-        onMouseOut={e => e.currentTarget.style.background = 'var(--color-surface)'}>
-          <Trash2 size={20} />
-        </button>
+        {audioUrl ? (
+          <a href={audioUrl} style={{
+            display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+            background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+            color: 'var(--color-text)', padding: '0.65rem', textDecoration: 'none',
+            borderRadius: 'var(--radius-md)'
+          }}>
+            <ExternalLink size={18} /> Audio
+          </a>
+        ) : (
+          <span style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>No audio asset</span>
+        )}
       </div>
     </Card>
   )

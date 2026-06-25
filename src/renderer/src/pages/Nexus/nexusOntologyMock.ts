@@ -184,12 +184,12 @@ export const visualDoctrineCards: VisualDoctrineCard[] = [
 ];
 
 export const notebookQueryTests: NotebookQueryTest[] = [
-  { id: 'mother-aurora', query: 'Explain the difference between Mother and Aurora.', readiness: 'Prompt ready', citation: 'NEX-22' },
-  { id: 'shouri-parents', query: "Who are Shouri's parents?", readiness: 'Prompt ready', citation: 'NEX-22' },
+  { id: 'mother-aurora', query: 'Explain the difference between Mother and Aurora.', readiness: 'Needs source check', citation: 'NEX-22' },
+  { id: 'shouri-parents', query: "Who are Shouri's parents?", readiness: 'Needs source check', citation: 'NEX-22' },
   { id: 'rayne-parents', query: "Who are Rayne's parents?", readiness: 'Needs source check', citation: 'NEX-17' },
-  { id: 'holy-arms', query: 'What are Holy Arms?', readiness: 'Prompt ready', citation: 'NEX-22' },
-  { id: 'tet-khepra', query: 'Is Tet part of Khepra-9?', readiness: 'Prompt ready', citation: 'NEX-22' },
-  { id: 'cain-oberon', query: 'What is the difference between Cain and Oberon?', readiness: 'Prompt ready', citation: 'NEX-22' }
+  { id: 'holy-arms', query: 'What are Holy Arms?', readiness: 'Needs source check', citation: 'NEX-22' },
+  { id: 'tet-khepra', query: 'Is Tet part of Khepra-9?', readiness: 'Needs source check', citation: 'NEX-22' },
+  { id: 'cain-oberon', query: 'What is the difference between Cain and Oberon?', readiness: 'Needs source check', citation: 'NEX-22' }
 ];
 
 export const stylePackPrimitives: StylePackPrimitive[] = [

@@ -64,6 +64,13 @@ interface PodcastJobStatus {
   message?: string;
 }
 
+interface WorkerFact {
+  status: string;
+  reason?: string;
+  commands?: string[];
+  missing?: string[];
+}
+
 export type BackendStatus = 'unknown' | 'connecting' | 'online' | 'offline';
 
 export interface BackendState {
@@ -74,11 +81,19 @@ export interface BackendState {
 
 export interface TelemetryState {
   sourceHealth: { connected: number | 'Unknown'; failed: number | 'Unknown'; pending: number | 'Unknown' };
-  knowledgeCoverage: { citationCoverage: string | 'Unknown'; orphanContent: number | 'Unknown'; unresolvedEntities: number | 'Unknown' };
+  knowledgeCoverage: { citationCoverage: string | 'Unknown'; insightCount?: number | 'Unknown'; orphanContent: number | 'Unknown'; unresolvedEntities: number | 'Unknown' };
   retrievalHealth: { latency: string | 'Unknown'; failed: string | 'Unknown'; contextDepth: string | 'Unknown' };
-  ingestionHealth: { queued: number | 'Unknown'; parsing: number | 'Unknown'; failed: number | 'Unknown'; completed: number | 'Unknown' };
+  ingestionHealth: {
+    queued: number | 'Unknown';
+    parsing: number | 'Unknown';
+    failed: number | 'Unknown';
+    completed: number | 'Unknown';
+    storedSources?: number | 'Unknown';
+    sourceWorker?: WorkerFact;
+    embeddingWorker?: WorkerFact;
+  };
   narrativeIndex: { characters: number | 'Unknown'; locations: number | 'Unknown'; factions: number | 'Unknown'; timelines: number | 'Unknown' };
-  studioQueue: { audiobookJobs: number | 'Unknown'; reportJobs: number | 'Unknown'; exportJobs: number | 'Unknown' };
+  studioQueue: { audiobookJobs: number | 'Unknown'; reportJobs: number | 'Unknown'; exportJobs: number | 'Unknown'; podcastWorker?: WorkerFact; voiceWorker?: WorkerFact };
 }
 
 interface AppState {
@@ -127,11 +142,11 @@ export const useStore = create<AppState>()(
     anthropicApiKey: '',
     hyperionNestEnabled: false,
     edgeNodes: [],
-    embeddingModel: 'nomic-embed-text',
-    defaultEmbeddingModel: 'nomic-embed-text',
-    visionModel: 'llava',
-    defaultVisionModel: 'llava',
-    defaultChatModel: 'llama3',
+    embeddingModel: '',
+    defaultEmbeddingModel: '',
+    visionModel: '',
+    defaultVisionModel: '',
+    defaultChatModel: '',
     storagePath: 'default',
     privacyMode: 'strict',
     redactionEnabled: true,
@@ -149,7 +164,7 @@ export const useStore = create<AppState>()(
     ocrEngine: 'tesseract',
     ocrAutoDetect: true,
     ocrImageExtract: false,
-    databaseType: 'sqlite',
+    databaseType: 'surrealdb',
     telemetryEnabled: false,
     routingStrategy: 'local',
     routingPrivacyStrict: true,

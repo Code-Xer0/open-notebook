@@ -92,6 +92,7 @@ export default function App() {
               <Route path="/notebooks" element={<NotebookList />} />
               <Route path="/notebook/:id" element={<NotebookDetail />} />
               <Route path="/chat" element={<Chat />} />
+              <Route path="/chat/:id" element={<Chat />} />
               <Route path="/sources" element={<SourcesManager />} />
               <Route path="/nexus" element={<NexusManager />} />
               <Route path="/podcasts" element={<PodcastStudio />} />

@@ -133,17 +133,35 @@ def parse_source_form_data(
     if notebooks:
         try:
             notebooks_list = json.loads(notebooks)
+            if isinstance(notebooks_list, str):
+                notebooks_list = [notebooks_list]
+            elif not isinstance(notebooks_list, list):
+                raise HTTPException(
+                    status_code=422,
+                    detail="notebooks must be a JSON array of notebook IDs",
+                )
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON in notebooks field: {notebooks}")
-            raise ValueError("Invalid JSON in notebooks field")
+            raise HTTPException(
+                status_code=422,
+                detail="notebooks must be a JSON array of notebook IDs",
+            )
 
     transformations_list = []
     if transformations:
         try:
             transformations_list = json.loads(transformations)
+            if not isinstance(transformations_list, list):
+                raise HTTPException(
+                    status_code=422,
+                    detail="transformations must be a JSON array of transformation IDs",
+                )
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON in transformations field: {transformations}")
-            raise ValueError("Invalid JSON in transformations field")
+            raise HTTPException(
+                status_code=422,
+                detail="transformations must be a JSON array of transformation IDs",
+            )
 
     # Create SourceCreate instance
     try:
@@ -163,32 +181,53 @@ def parse_source_form_data(
         pass  # SourceCreate instance created successfully
     except Exception as e:
         logger.error(f"Failed to create SourceCreate instance: {e}")
-        raise
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
     return source_data, file
+
+
+PLAIN_TEXT_UPLOAD_EXTENSIONS = {".txt", ".md", ".markdown", ".csv"}
+
+
+def _is_plain_text_upload(path: Optional[str]) -> bool:
+    if not path:
+        return False
+    return Path(path).suffix.lower() in PLAIN_TEXT_UPLOAD_EXTENSIONS
+
+
+def _read_plain_text_upload(path: str) -> str:
+    upload_path = Path(path)
+    try:
+        return upload_path.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        return upload_path.read_text(encoding="utf-8", errors="replace")
 
 
 @router.get("/sources/status")
 async def get_global_sources_status():
     """Get global status of all sources for telemetry."""
     try:
+        from api.command_registry import command_registry_status
         from open_notebook.database.repository import repo_query
         # Basic aggregate counts
         sources_res = await repo_query("SELECT id FROM source")
         connected = len(sources_res) if sources_res else 0
+        workers = command_registry_status().get("workerAvailability", {})
         return {
-            "status": "online",
+            "status": "reachable",
             "connected": connected,
-            "failed": 0,
-            "pending": 0,
+            "failed": "Unknown",
+            "pending": "Unknown",
+            "sourceWorker": workers.get("source", {"status": "unknown"}),
+            "embeddingWorker": workers.get("embedding", {"status": "unknown"}),
         }
     except Exception as e:
         logger.error(f"Error fetching global source status: {e}")
         return {
             "status": "error",
             "connected": 0,
-            "failed": 0,
-            "pending": 0,
+            "failed": "Unknown",
+            "pending": "Unknown",
         }
 
 
@@ -422,6 +461,53 @@ async def create_source(
                 updated=str(source.updated),
             )
 
+        if (
+            source_data.type == "upload"
+            and not source_data.embed
+            and not transformation_ids
+            and _is_plain_text_upload(file_path or source_data.file_path)
+        ):
+            final_file_path = file_path or source_data.file_path
+            if not final_file_path:
+                raise HTTPException(
+                    status_code=400,
+                    detail="File upload or file_path is required for upload type",
+                )
+            source_title = (
+                source_data.title
+                or (upload_file.filename if upload_file and upload_file.filename else None)
+                or Path(final_file_path).name
+            )
+            source = Source(
+                title=source_title,
+                topics=[],
+                asset=Asset(file_path=final_file_path),
+                full_text=_read_plain_text_upload(final_file_path),
+            )
+            await source.save()
+
+            for notebook_id in source_data.notebooks or []:
+                await source.add_to_notebook(notebook_id)
+
+            return SourceResponse(
+                id=source.id or "",
+                title=source.title,
+                topics=source.topics or [],
+                asset=AssetModel(file_path=final_file_path, url=None),
+                full_text=source.full_text,
+                embedded=False,
+                embedded_chunks=0,
+                created=str(source.created),
+                updated=str(source.updated),
+                status="stored",
+                processing_info={
+                    "async": False,
+                    "stored": True,
+                    "parser": "plain_text_upload",
+                    "embedding": "not_requested",
+                },
+            )
+
         # Branch based on processing mode
         if source_data.async_processing:
             # ASYNC PATH: Create source record first, then queue command
@@ -436,8 +522,9 @@ async def create_source(
             else:
                 source_asset = None
 
+            source_title = source_data.title or (upload_file.filename if upload_file and upload_file.filename else None) or "Stored upload pending processing"
             source = Source(
-                title=source_data.title or "Processing...",
+                title=source_title,
                 topics=[],
                 asset=source_asset,
             )
@@ -516,8 +603,9 @@ async def create_source(
                 import commands.source_commands  # noqa: F401
 
                 # Create source record - let SurrealDB generate the ID
+                source_title = source_data.title or (upload_file.filename if upload_file and upload_file.filename else None) or "Stored upload pending processing"
                 source = Source(
-                    title=source_data.title or "Processing...",
+                    title=source_title,
                     topics=[],
                 )
                 await source.save()

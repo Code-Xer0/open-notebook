@@ -1,14 +1,46 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { UploadDropzone } from './UploadDropzone';
 import { ImageCapsuleWizard } from './ImageCapsuleWizard';
-import { Link as LinkIcon, FileText, Settings, Database, BrainCircuit, Loader2, Image as ImageIcon, Video, Camera, ScanText } from 'lucide-react';
+import { Link as LinkIcon, FileText, Settings, Database, BrainCircuit, Loader2, Image as ImageIcon } from 'lucide-react';
 
 type SourceType = 'upload' | 'image' | 'video' | 'scanned-pdf' | 'link' | 'text';
 
 import { api } from '../../services/api';
+
+type UploadPhase = 'pending' | 'uploading' | 'stored' | 'queued' | 'failed';
+
+interface UploadStatus {
+  name: string;
+  size: number;
+  phase: UploadPhase;
+  message?: string;
+  sourceId?: string;
+}
+
+const NEXUS_CORPUS_PATH = 'C:\\Users\\Inf3r\\Downloads\\Nexus Assets\\NEXUS_PROJECT_SPACE\\00_DOCTRINE\\MASTER_HTML';
+const NEXUS_CORPUS_EXTENSIONS = /\.(md|markdown|txt)$/i;
+
+function isPlainTextSourceFile(file: File): boolean {
+  return NEXUS_CORPUS_EXTENSIONS.test(file.name);
+}
+
+function getApiErrorMessage(error: any): string {
+  const detail = error?.response?.data?.detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        const location = Array.isArray(item?.loc) ? item.loc.join('.') : '';
+        return [location, item?.msg].filter(Boolean).join(': ') || JSON.stringify(item);
+      })
+      .join('; ');
+  }
+  if (typeof detail === 'string') return detail;
+  if (detail) return JSON.stringify(detail);
+  return error?.message || 'Failed to add source';
+}
 
 export function SourcesManager() {
   const [sourceType, setSourceType] = useState<SourceType>('upload');
@@ -16,40 +48,123 @@ export function SourcesManager() {
   const [textContent, setTextContent] = useState('');
   const [textTitle, setTextTitle] = useState('');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadStatuses, setUploadStatuses] = useState<UploadStatus[]>([]);
+  const nexusCorpusInputRef = useRef<HTMLInputElement>(null);
   
   // Processing options
-  const [shouldParse, setShouldParse] = useState(true);
-  const [shouldEmbed, setShouldEmbed] = useState(true);
+  const [shouldEmbed, setShouldEmbed] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const handleFilesSelected = (files: File[]) => {
+    setSelectedFiles(files);
+    setUploadStatuses(files.map((file) => ({
+      name: file.name,
+      size: file.size,
+      phase: 'pending'
+    })));
+    setError(null);
+    setSuccess(null);
+  };
+
+  const handleNexusCorpusFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    const corpusFiles = files.filter((file) => NEXUS_CORPUS_EXTENSIONS.test(file.name));
+    if (!corpusFiles.length) {
+      setError('No Markdown or text files were selected for Nexus Corpus import.');
+      return;
+    }
+    if (corpusFiles.length > 50) {
+      setSuccess(`Selected the first 50 Markdown/Text files from Nexus Corpus. ${corpusFiles.length - 50} files were left out by the current upload limit.`);
+    } else {
+      setSuccess(`Selected ${corpusFiles.length} Nexus Corpus file${corpusFiles.length === 1 ? '' : 's'} for import.`);
+    }
+    setSourceType('upload');
+    handleFilesSelected(corpusFiles.slice(0, 50));
+    event.target.value = '';
+  };
+
+  const setFileStatus = (index: number, patch: Partial<UploadStatus>) => {
+    setUploadStatuses((current) => current.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, ...patch } : item
+    )));
+  };
 
   const handleSubmit = async () => {
     setIsProcessing(true);
     setError(null);
     setSuccess(null);
     try {
-      if (['upload', 'image', 'video', 'scanned-pdf'].includes(sourceType)) {
-        for (const file of selectedFiles) {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('type', 'upload');
-          formData.append('parse', shouldParse.toString());
-          formData.append('embed', shouldEmbed.toString());
-          // Ideally append lane specific flags here based on sourceType
-          if (sourceType === 'image') formData.append('vision', 'true');
-          if (sourceType === 'video') formData.append('extract_frames', 'true');
-          if (sourceType === 'scanned-pdf') formData.append('ocr', 'true');
-          await api.sources.create(formData);
+      if (['upload', 'video', 'scanned-pdf'].includes(sourceType)) {
+        let submitted = 0;
+        let failed = 0;
+        const failures: string[] = [];
+
+        setUploadStatuses(selectedFiles.map((file) => ({
+          name: file.name,
+          size: file.size,
+          phase: 'pending'
+        })));
+
+        for (const [index, file] of selectedFiles.entries()) {
+          setFileStatus(index, { phase: 'uploading', message: 'Uploading to local backend...' });
+
+          try {
+            if (isPlainTextSourceFile(file)) {
+              setFileStatus(index, { phase: 'uploading', message: 'Reading text and storing as a grounded source...' });
+              const content = await file.text();
+              const source = await api.sources.createJson({
+                title: file.name,
+                content,
+                type: 'text',
+                embed: false
+              });
+              submitted += 1;
+              setFileStatus(index, {
+                phase: 'stored',
+                message: 'Stored as text source; embeddings were not run',
+                sourceId: source?.id
+              });
+              continue;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('type', 'upload');
+            formData.append('embed', shouldEmbed.toString());
+            formData.append('delete_source', 'false');
+            formData.append('async_processing', 'true');
+
+            const source = await api.sources.create(formData);
+            submitted += 1;
+            setFileStatus(index, {
+              phase: 'queued',
+              message: source?.command_id ? 'Queued for backend processing; text extraction is not verified yet' : 'Submitted to source library',
+              sourceId: source?.id
+            });
+          } catch (fileError: any) {
+            failed += 1;
+            const message = getApiErrorMessage(fileError);
+            failures.push(`${file.name}: ${message}`);
+            setFileStatus(index, { phase: 'failed', message });
+          }
+        }
+
+        if (submitted > 0) {
+          setSuccess(`Submitted ${submitted} of ${selectedFiles.length} source file${selectedFiles.length === 1 ? '' : 's'} to the local backend.`);
+        }
+        if (failed > 0) {
+          setError(`Failed ${failed} file${failed === 1 ? '' : 's'}: ${failures.join(' | ')}`);
         }
       } else if (sourceType === 'text') {
         await api.sources.createJson({
           title: textTitle,
           content: textContent,
           type: 'text',
-          parse: shouldParse,
           embed: shouldEmbed
         });
+        setSuccess('Text source submitted to the local backend.');
       } else if (sourceType === 'link') {
         // Assume backend handles list of urls
         const urlList = urls.split('\n').filter(u => u.trim() !== '');
@@ -57,20 +172,14 @@ export function SourcesManager() {
           await api.sources.createJson({
             url: url.trim(),
             type: 'link',
-            parse: shouldParse,
             embed: shouldEmbed
           });
         }
+        setSuccess(`Submitted ${urlList.length} link source${urlList.length === 1 ? '' : 's'} to the local backend.`);
       }
-      setSuccess('Sources submitted to the local backend.');
-      // Reset form
-      setUrls('');
-      setTextContent('');
-      setTextTitle('');
-      setSelectedFiles([]);
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Failed to add source');
+      setError(getApiErrorMessage(err));
     } finally {
       setIsProcessing(false);
     }
@@ -93,6 +202,15 @@ export function SourcesManager() {
       </div>
 
       <Card>
+        <input
+          ref={nexusCorpusInputRef}
+          type="file"
+          multiple
+          accept=".md,.markdown,.txt"
+          style={{ display: 'none' }}
+          onChange={handleNexusCorpusFiles}
+          {...({ webkitdirectory: 'true', directory: 'true' } as Record<string, string>)}
+        />
         {/* Tabs */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '2rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '1rem' }}>
           <button 
@@ -108,20 +226,6 @@ export function SourcesManager() {
           >
             <ImageIcon size={18} />
             Images / Vision
-          </button>
-          <button 
-            onClick={() => setSourceType('video')}
-            style={getTabStyle(sourceType === 'video')}
-          >
-            <Video size={18} />
-            Video Intake
-          </button>
-          <button 
-            onClick={() => setSourceType('scanned-pdf')}
-            style={getTabStyle(sourceType === 'scanned-pdf')}
-          >
-            <ScanText size={18} />
-            Scanned PDFs
           </button>
           <button 
             onClick={() => setSourceType('link')}
@@ -142,53 +246,33 @@ export function SourcesManager() {
         {/* Content Area */}
         <div style={{ marginBottom: '2rem' }}>
           {sourceType === 'upload' && (
-            <UploadDropzone onFilesSelected={setSelectedFiles} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <UploadDropzone
+                onFilesSelected={handleFilesSelected}
+                accept=".pdf,.docx,.txt,.csv,.md,.markdown"
+              />
+              <div style={{ padding: '1rem', background: 'var(--panel-subtle)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+                <div>
+                  <h4 style={{ marginBottom: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Database size={16} color="var(--color-primary)" /> Nexus Corpus Import
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', margin: 0 }}>
+                    Select the MASTER_HTML folder or its Markdown/Text files. These are stored directly as text sources. Default target: {NEXUS_CORPUS_PATH}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  onClick={() => nexusCorpusInputRef.current?.click()}
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  Select Nexus Corpus
+                </Button>
+              </div>
+            </div>
           )}
 
           {sourceType === 'image' && (
             <ImageCapsuleWizard />
-          )}
-
-          {sourceType === 'video' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <UploadDropzone onFilesSelected={setSelectedFiles} />
-              <div style={{ padding: '1rem', background: 'var(--panel-subtle)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--color-border)' }}>
-                <h4 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Camera size={16} color="var(--color-primary)" /> Video Frame Extraction & Metadata
-                </h4>
-                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '1rem' }}>
-                  Video frame extraction is scaffolded and remains unavailable until the backend exposes a verified pipeline.
-                </p>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--signal-warning)', fontSize: '0.875rem', fontWeight: 500 }}>
-                  <span>Status:</span> <span>Not wired</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {sourceType === 'scanned-pdf' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <UploadDropzone onFilesSelected={setSelectedFiles} />
-              <div style={{ padding: '1rem', background: 'var(--panel-subtle)', borderRadius: 'var(--radius-md)', border: '1px dashed var(--color-border)' }}>
-                <h4 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <ScanText size={16} color="var(--color-primary)" /> Optical Character Recognition (OCR)
-                </h4>
-                <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '1rem' }}>
-                  Auto-detect scanned PDFs or manually run OCR on dense image-based documents.
-                </p>
-                <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                    <input type="checkbox" defaultChecked /> Auto-detect scanned pages
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem' }}>
-                    <input type="checkbox" /> Force manual OCR run
-                  </label>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--signal-warning)', fontSize: '0.875rem', fontWeight: 500 }}>
-                  <span>Status:</span> <span>OCR unavailable (Waiting for Tesseract/Vision plugin)</span>
-                </div>
-              </div>
-            </div>
           )}
 
           {sourceType === 'link' && (
@@ -259,11 +343,12 @@ export function SourcesManager() {
               </h3>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', cursor: 'default', opacity: 0.72 }}>
                   <input
                     type="checkbox"
-                    checked={shouldParse}
-                    onChange={(e) => setShouldParse(e.target.checked)}
+                    checked={false}
+                    disabled
+                    readOnly
                     style={{ marginTop: '0.25rem', accentColor: 'var(--color-primary)', width: '1rem', height: '1rem' }}
                   />
                   <div>
@@ -272,7 +357,7 @@ export function SourcesManager() {
                       Parse Document Structure
                     </span>
                     <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
-                      Extract headings, paragraphs, and metadata automatically.
+                      Worker-gated. Plain Markdown/Text can be stored now; richer document parsing waits for a verified source worker.
                     </p>
                   </div>
                 </label>
@@ -290,7 +375,7 @@ export function SourcesManager() {
                       Generate Embeddings (Vectorize)
                     </span>
                     <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
-                      Create vector embeddings for semantic search and AI comprehension.
+                      Optional command-worker path. Leave off for immediate text-source ingest; the UI will not claim embeddings unless the backend proves them.
                     </p>
                   </div>
                 </label>
@@ -310,18 +395,42 @@ export function SourcesManager() {
             )}
 
             {/* Actions */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
-              <Button disabled={isProcessing} onClick={() => { setUrls(''); setTextContent(''); setTextTitle(''); setSelectedFiles([]); setError(null); setSuccess(null); }} className="bg-transparent" style={{ background: 'transparent', border: '1px solid var(--color-border)' }}>
-                Cancel
-              </Button>
-              <Button disabled={!isFormValid() || isProcessing} onClick={handleSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                {isProcessing ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
-                    Processing...
-                  </>
-                ) : 'Add Sources'}
-              </Button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {uploadStatuses.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {uploadStatuses.map((status, index) => (
+                    <div key={`${status.name}-${index}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '0.75rem', alignItems: 'center', padding: '0.65rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', background: 'var(--panel-subtle)' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.85rem' }}>{status.name}</strong>
+                        <small style={{ color: 'var(--color-text-muted)' }}>{status.message || `${(status.size / 1024).toFixed(1)} KB`}</small>
+                      </div>
+                      <span style={{
+                        color: status.phase === 'failed' ? 'var(--signal-error)' : status.phase === 'stored' ? 'var(--signal-healthy)' : status.phase === 'queued' || status.phase === 'uploading' ? 'var(--signal-warning)' : 'var(--color-text-muted)',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em'
+                      }}>
+                        {status.phase}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                <Button disabled={isProcessing} onClick={() => { setUrls(''); setTextContent(''); setTextTitle(''); setSelectedFiles([]); setUploadStatuses([]); setError(null); setSuccess(null); }} className="bg-transparent" style={{ background: 'transparent', border: '1px solid var(--color-border)' }}>
+                  Cancel
+                </Button>
+                <Button disabled={!isFormValid() || isProcessing} onClick={handleSubmit} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {isProcessing ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                      Processing...
+                    </>
+                  ) : 'Add Sources'}
+                </Button>
+              </div>
             </div>
           </>
         )}

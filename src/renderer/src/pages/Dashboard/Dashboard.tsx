@@ -52,7 +52,7 @@ const statusLabel: Record<ManagedSidecarStatus['phase'], string> = {
 const statusColor: Record<ManagedSidecarStatus['phase'], string> = {
   idle: 'var(--text-muted)',
   starting: 'var(--signal-warning)',
-  online: 'var(--signal-healthy)',
+  online: 'var(--accent-primary)',
   offline: 'var(--text-muted)',
   error: 'var(--signal-error)',
   stopping: 'var(--signal-warning)'
@@ -78,6 +78,7 @@ export function Dashboard() {
   const selectedNotebook = notebooks[0] ?? null;
   const isOnline = backend.status === 'online';
   const port5055 = sidecars?.ports.find((p) => p.port === 5055);
+  const selectedNotebookPath = selectedNotebook?.id ? `/chat/${encodeURIComponent(selectedNotebook.id)}` : null;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -137,7 +138,7 @@ export function Dashboard() {
     },
     {
       label: 'Migrations',
-      value: isOnline ? 'Backend reachable; migration detail not checked here' : 'Not verified',
+      value: isOnline ? 'API reachable; use Diagnostics for schema detail' : 'Not verified',
       phase: 'idle',
       status: 'Not verified',
       icon: <CheckCircle2 size={15} />
@@ -165,7 +166,12 @@ export function Dashboard() {
           <button className="btn" onClick={() => navigate('/sources')}>
             <Upload size={15} /> Add sources
           </button>
-          <button className="btn primary" onClick={() => navigate('/chat')}>
+          <button
+            className="btn primary"
+            disabled={!selectedNotebookPath}
+            onClick={() => selectedNotebookPath && navigate(selectedNotebookPath)}
+            title={selectedNotebookPath ? 'Ask the first recent notebook' : 'Create or open a notebook before asking'}
+          >
             <MessageSquare size={15} /> Ask notebook
           </button>
         </div>
@@ -290,7 +296,7 @@ export function Dashboard() {
                 <h2>Ask this notebook</h2>
                 <p>{selectedNotebook ? pickName(selectedNotebook, 'Notebook') : 'Select or create a notebook first.'}</p>
               </div>
-              {isOnline ? <CheckCircle2 size={17} color="var(--signal-healthy)" /> : <XCircle size={17} color="var(--signal-error)" />}
+              {isOnline && selectedNotebook ? <CheckCircle2 size={17} color="var(--accent-primary)" /> : <XCircle size={17} color="var(--signal-error)" />}
             </div>
 
             <textarea
@@ -299,14 +305,14 @@ export function Dashboard() {
               placeholder="Ask a source-grounded question..."
               disabled={!isOnline || !selectedNotebook}
             />
-            <button className="btn primary" disabled={!isOnline || !selectedNotebook || !prompt.trim()} onClick={() => navigate('/chat')}>
+            <button className="btn primary" disabled={!isOnline || !selectedNotebookPath || !prompt.trim()} onClick={() => selectedNotebookPath && navigate(selectedNotebookPath)}>
               <MessageSquare size={15} /> Open chat
             </button>
 
             <div className="suggested-prompts">
-              <button disabled={!selectedNotebook}>Summarize the source set</button>
-              <button disabled={!selectedNotebook}>Find contradictions</button>
-              <button disabled={!selectedNotebook}>List cited claims</button>
+              <button disabled={!selectedNotebook} onClick={() => setPrompt('Summarize the source set')}>Summarize the source set</button>
+              <button disabled={!selectedNotebook} onClick={() => setPrompt('Find contradictions')}>Find contradictions</button>
+              <button disabled={!selectedNotebook} onClick={() => setPrompt('List cited claims')}>List cited claims</button>
             </div>
           </section>
 
@@ -326,8 +332,8 @@ export function Dashboard() {
           <section className="workspace-panel audio-panel">
             <div className="panel-heading">
               <div>
-                <h2>Audio overview</h2>
-                <p>NotebookLM-style audio output lane.</p>
+                <h2>Audio records</h2>
+                <p>Audio generation stays hidden until a real worker is available.</p>
               </div>
               <AudioLines size={18} color="var(--accent-primary)" />
             </div>

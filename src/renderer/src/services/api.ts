@@ -8,9 +8,6 @@ export const API_BASE_URL = 'http://localhost:5055';
 // `/api`, so individual paths must be written WITHOUT the `/api` prefix.
 export const apiClient = axios.create({
   baseURL: `${API_BASE_URL}/api`,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 });
 
 // Local access token for the backend's PasswordAuthMiddleware. This is NOT a
@@ -39,6 +36,11 @@ apiClient.interceptors.request.use((config) => {
     config.headers = config.headers ?? {};
     (config.headers as Record<string, string>).Authorization = `Bearer ${token}`;
   }
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    config.headers = config.headers ?? {};
+    delete (config.headers as Record<string, string>)['Content-Type'];
+    delete (config.headers as Record<string, string>)['content-type'];
+  }
   return config;
 });
 
@@ -65,7 +67,7 @@ export const api = {
 
   // Chat
   chat: {
-    getSessions: () => apiClient.get('/chat/sessions').then(res => res.data),
+    getSessions: (notebookId: string) => apiClient.get('/chat/sessions', { params: { notebook_id: notebookId } }).then(res => res.data),
     createSession: (data: any) => apiClient.post('/chat/sessions', data).then(res => res.data),
     getSession: (id: string) => apiClient.get(`/chat/sessions/${id}`).then(res => res.data),
     updateSession: (id: string, data: any) => apiClient.put(`/chat/sessions/${id}`, data).then(res => res.data),
@@ -120,6 +122,7 @@ export const api = {
   // Diagnostics (mounted under /api → paths here are relative to apiClient baseURL)
   diagnostics: {
     version: () => apiClient.get('/version').then(res => res.data),
+    status: () => apiClient.get('/diagnostics').then(res => res.data),
     telemetrySummary: () => apiClient.get('/telemetry/summary').then(res => res.data),
   },
 

@@ -9,6 +9,19 @@ interface Message {
   content: string;
 }
 
+interface BackendChatMessage {
+  id?: string;
+  type?: string;
+  content?: string;
+}
+
+function getApiErrorMessage(error: any): string {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map((item) => item?.msg || JSON.stringify(item)).join('; ');
+  return error?.message || 'Failed to connect to AI backend';
+}
+
 export function Chat() {
   const { id: notebookId } = useParams<{ id: string }>();
   const [messages, setMessages] = useState<Message[]>([
@@ -17,16 +30,62 @@ export function Chat() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [contextStatus, setContextStatus] = useState<string>('Select a notebook with sources before asking grounded questions.');
 
   useEffect(() => {
-    // Optionally create or load a session when Chat mounts
-    if (notebookId) {
-      // In a real implementation you might fetch the session for this notebook
+    let cancelled = false;
+
+    async function loadSession() {
+      setSessionId(null);
+      if (!notebookId) {
+        setContextStatus('No notebook selected. Open chat from a notebook to build grounded context.');
+        return;
+      }
+
+      try {
+        const sessions = await api.chat.getSessions(notebookId);
+        if (cancelled) return;
+        const firstSession = Array.isArray(sessions) ? sessions[0] : null;
+        if (firstSession?.id) {
+          setSessionId(firstSession.id);
+          setContextStatus('Notebook session loaded. Context will be rebuilt before each answer.');
+        } else {
+          setContextStatus('Notebook selected. A chat session will be created on first message.');
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setContextStatus(`Could not load notebook chat sessions: ${getApiErrorMessage(error)}`);
+        }
+      }
     }
+
+    if (notebookId) {
+      void loadSession();
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [notebookId]);
 
+  const ensureSession = async (): Promise<string> => {
+    if (!notebookId) {
+      throw new Error('No notebook selected.');
+    }
+    if (sessionId) return sessionId;
+    const session = await api.chat.createSession({
+      notebook_id: notebookId,
+      title: 'Notebook chat'
+    });
+    if (!session?.id) {
+      throw new Error('Backend did not return a chat session id.');
+    }
+    setSessionId(session.id);
+    return session.id;
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || loading) return;
+    if (!input.trim() || loading || !notebookId) return;
     
     const userMessage = input;
     setInput('');
@@ -34,27 +93,46 @@ export function Chat() {
     setLoading(true);
 
     try {
-      // Use standard execution if we don't have a specific session
-      const response = await api.chat.execute({
-        message: userMessage,
+      const activeSessionId = await ensureSession();
+      const contextResponse = await api.chat.buildContext({
         notebook_id: notebookId,
-        session_id: sessionId
+        context_config: {}
+      });
+
+      if (!contextResponse?.char_count) {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: 'Blocked: this notebook has no source context yet. Add sources before asking grounded questions.'
+        }]);
+        setContextStatus('Blocked: context build returned zero characters.');
+        return;
+      }
+
+      setContextStatus(`Using ${contextResponse.char_count} grounded context characters from this notebook.`);
+      const response = await api.chat.execute({
+        session_id: activeSessionId,
+        message: userMessage,
+        context: contextResponse.context
       });
       
       if (response.session_id) {
         setSessionId(response.session_id);
       }
+
+      const responseMessages: BackendChatMessage[] = Array.isArray(response.messages) ? response.messages : [];
+      const latestAssistant = [...responseMessages].reverse().find((msg) => msg.type === 'ai' || msg.type === 'assistant');
       
       setMessages(prev => [...prev, { 
         id: Date.now().toString(), 
         role: 'assistant', 
-        content: response.response || response.content || 'Error: Empty response from AI' 
+        content: latestAssistant?.content || 'No assistant response was returned by the backend.'
       }]);
     } catch (error: any) {
       setMessages(prev => [...prev, { 
         id: Date.now().toString(), 
         role: 'assistant', 
-        content: `Error: ${error.message || 'Failed to connect to AI backend'}` 
+        content: `Error: ${getApiErrorMessage(error)}`
       }]);
     } finally {
       setLoading(false);
@@ -85,7 +163,7 @@ export function Chat() {
           </div>
           <div>
             <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Notebook Chat</h3>
-            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{notebookId ? 'Grounded to selected notebook' : 'No notebook selected'}</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{notebookId ? contextStatus : 'No notebook selected'}</span>
           </div>
         </div>
         <button style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer' }}>
@@ -162,6 +240,7 @@ export function Chat() {
             placeholder="Ask about your notebook..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            disabled={!notebookId}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -186,10 +265,10 @@ export function Chat() {
           />
           <button 
             onClick={handleSend}
-            disabled={!input.trim()}
+            disabled={!input.trim() || !notebookId || loading}
             style={{ 
-              background: input.trim() ? 'var(--color-primary)' : 'var(--color-surface-hover)', 
-              color: input.trim() ? 'var(--shell-bg)' : 'var(--color-text-muted)',
+              background: input.trim() && notebookId && !loading ? 'var(--color-primary)' : 'var(--color-surface-hover)',
+              color: input.trim() && notebookId && !loading ? 'var(--shell-bg)' : 'var(--color-text-muted)',
               border: 'none',
               borderRadius: '50%',
               width: '36px',
@@ -197,7 +276,7 @@ export function Chat() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              cursor: input.trim() ? 'pointer' : 'not-allowed',
+              cursor: input.trim() && notebookId && !loading ? 'pointer' : 'not-allowed',
               transition: 'var(--transition)',
               flexShrink: 0,
               marginLeft: '0.5rem'
