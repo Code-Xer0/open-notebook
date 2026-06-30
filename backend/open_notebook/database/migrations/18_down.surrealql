@@ -1,0 +1,7 @@
+-- Rollback Migration 18: CODEX Evidence Spine V1
+
+REMOVE TABLE IF EXISTS evidence_snapshot;
+REMOVE TABLE IF EXISTS intake_source;
+REMOVE TABLE IF EXISTS artifact_event;
+REMOVE TABLE IF EXISTS file_derivative;
+REMOVE TABLE IF EXISTS file_asset;

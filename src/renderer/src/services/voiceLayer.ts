@@ -130,6 +130,31 @@ export interface PerformanceTake {
   notes?: string | null;
 }
 
+export interface RenderManifestJob {
+  commandId: string;
+  manifestId: string;
+  acceptedSegmentIds: string[];
+  status: string;
+}
+
+export interface RegeneratePerformanceTakeJob {
+  commandId: string;
+  takeId: string;
+  manifestId: string;
+  segmentId: string;
+  status: string;
+}
+
+export interface CommandJobStatus {
+  job_id: string;
+  status: string;
+  result?: { manifest?: ReadingManifest; takes?: PerformanceTake[]; warnings?: string[] } | null;
+  error_message?: string | null;
+  created?: string | null;
+  updated?: string | null;
+  progress?: Record<string, unknown> | null;
+}
+
 export const voiceLayer = {
   capsules: {
     list: () => apiClient.get<{ capsules: VoiceCapsule[] }>('/voice-capsules').then((res) => res.data.capsules),
@@ -177,12 +202,20 @@ export const voiceLayer = {
       apiClient.post<{ manifest: ReadingManifest; takes: PerformanceTake[]; warnings: string[] }>(`/reading-manifests/${encodeURIComponent(id)}/render`, {
         segmentIds,
       }).then((res) => res.data),
+    renderJob: (id: string, data: { segmentIds?: string[]; renderMode?: 'selected' | 'chapter'; maxSegments?: number; forceProvider?: string | null }) =>
+      apiClient.post<RenderManifestJob>(`/reading-manifests/${encodeURIComponent(id)}/render-jobs`, data).then((res) => res.data),
     publish: (id: string) => apiClient.post<ReadingManifest>(`/reading-manifests/${encodeURIComponent(id)}/publish`).then((res) => res.data),
   },
   takes: {
     list: (manifestId?: string) => apiClient.get<PerformanceTake[]>('/performance-takes', { params: manifestId ? { manifest_id: manifestId } : undefined }).then((res) => res.data),
     updateStatus: (id: string, status: PerformanceTakeStatus, notes?: string) =>
       apiClient.put<PerformanceTake>(`/performance-takes/${encodeURIComponent(id)}/status`, { status, notes }).then((res) => res.data),
+    regenerate: (id: string, data: { forceProvider?: string | null; settings?: Record<string, unknown> } = {}) =>
+      apiClient.post<RegeneratePerformanceTakeJob>(`/performance-takes/${encodeURIComponent(id)}/regenerate`, data).then((res) => res.data),
+    audioBlob: (id: string) => apiClient.get<Blob>(`/performance-takes/${encodeURIComponent(id)}/audio`, { responseType: 'blob' }).then((res) => res.data),
     audioUrl: (id: string) => `${API_BASE_URL}/api/performance-takes/${encodeURIComponent(id)}/audio`,
+  },
+  jobs: {
+    get: (id: string) => apiClient.get<CommandJobStatus>(`/commands/jobs/${encodeURIComponent(id)}`).then((res) => res.data),
   },
 };

@@ -4,6 +4,7 @@ from loguru import logger
 from surreal_commands import get_command_status, submit_command
 
 from api.command_registry import ensure_command_modules
+from open_notebook.database.repository import repo_query
 
 
 class CommandService:
@@ -77,9 +78,49 @@ class CommandService:
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
         """List command jobs with optional filtering"""
-        # This will be implemented with proper SurrealDB queries
-        # For now, return empty list as this is foundation phase
-        return []
+        conditions: list[str] = []
+        params: dict[str, Any] = {"limit": max(1, min(limit, 200))}
+        if module_filter:
+            conditions.append("app = $app")
+            params["app"] = module_filter
+        if command_filter:
+            conditions.append("name = $name")
+            params["name"] = command_filter
+        if status_filter:
+            conditions.append("status = $status")
+            params["status"] = status_filter
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        try:
+            rows = await repo_query(
+                f"""
+                SELECT id, app, name, status, result, error_message, created, updated, progress
+                FROM command
+                {where_clause}
+                ORDER BY updated DESC, created DESC
+                LIMIT $limit
+                """,
+                params,
+            )
+        except Exception as exc:
+            if "table 'command' does not exist" in str(exc).lower():
+                return []
+            raise
+
+        return [
+            {
+                "job_id": str(row.get("id")),
+                "app": row.get("app"),
+                "command": row.get("name"),
+                "status": row.get("status"),
+                "result": row.get("result"),
+                "error_message": row.get("error_message"),
+                "created": str(row.get("created")) if row.get("created") else None,
+                "updated": str(row.get("updated")) if row.get("updated") else None,
+                "progress": row.get("progress"),
+            }
+            for row in rows
+        ]
 
     @staticmethod
     async def cancel_command_job(job_id: str) -> bool:

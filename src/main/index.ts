@@ -450,6 +450,11 @@ async function startBackendProcesses(): Promise<void> {
     SURREAL_NAMESPACE: 'open_notebook',
     SURREAL_DATABASE: 'production',
     CODEX_APP_VERSION: app.getVersion(),
+    CODEX_RESOURCES_PATH: isDev ? appPath : process.resourcesPath,
+    CODEX_RUNTIME_DATA_DIR: dataDir,
+    CODEX_BACKEND_LOG_PATH: sidecarLogPath,
+    CODEX_SURREAL_PATH: surrealPath,
+    CODEX_RUNTIME_DOCKER_REQUIRED: 'false',
     OPEN_NOTEBOOK_ENCRYPTION_KEY: getEncryptionKey(dataDir),
     OPEN_NOTEBOOK_PASSWORD: 'open-notebook-change-me',
   }
@@ -478,7 +483,7 @@ async function startBackendProcesses(): Promise<void> {
     }
     pythonProcess = spawn('uv', ['run', 'python', 'run_api.py'], {
       cwd: backendPath,
-      env: { ...backendEnv, PATH: envPath },
+      env: { ...backendEnv, PATH: envPath, CODEX_BACKEND_PATH: join(backendPath, 'run_api.py') },
       shell: true,
       windowsHide: true
     })
@@ -510,7 +515,7 @@ async function startBackendProcesses(): Promise<void> {
       sidecarStarting = false
       return
     }
-    pythonProcess = spawn(backendExePath, [], { cwd: dataDir, env: backendEnv, windowsHide: true })
+    pythonProcess = spawn(backendExePath, [], { cwd: dataDir, env: { ...backendEnv, CODEX_BACKEND_PATH: backendExePath }, windowsHide: true })
   }
   backendStatus.pid = pythonProcess.pid ?? null
   writeSidecarState()

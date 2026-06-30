@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { SidecarStatus } from '../../../preload/index';
 import { codexLightTheme, type ThemeCustomization, type ThemeCustomizations, type ThemeMode } from '../theme';
+import type { RuntimeDiagnostics } from '../types/runtime';
 
 interface UserSettings {
   themeFamily: 'notebook' | 'operator-crimson' | 'cerberus-red' | 'forge-amber' | 'continuity-gold' | 'argos-cyan' | 'field-blue' | 'obsidian';
@@ -69,6 +70,10 @@ interface WorkerFact {
   reason?: string;
   commands?: string[];
   missing?: string[];
+  lastProbeAt?: string | null;
+  lastProbeStatus?: string | null;
+  lastError?: string | null;
+  blockingReason?: string | null;
 }
 
 export type BackendStatus = 'unknown' | 'connecting' | 'online' | 'offline';
@@ -114,6 +119,9 @@ interface AppState {
 
   sidecars: SidecarStatus | null;
   setSidecars: (s: SidecarStatus | null) => void;
+
+  diagnostics: RuntimeDiagnostics | null;
+  setDiagnostics: (d: RuntimeDiagnostics | null) => void;
 }
 
 export const useStore = create<AppState>()(
@@ -127,6 +135,9 @@ export const useStore = create<AppState>()(
 
   sidecars: null,
   setSidecars: (s) => set({ sidecars: s }),
+
+  diagnostics: null,
+  setDiagnostics: (d) => set({ diagnostics: d }),
   
   settings: {
     themeFamily: 'notebook',

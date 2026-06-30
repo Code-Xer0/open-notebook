@@ -9,6 +9,7 @@ import { Link as LinkIcon, FileText, Settings, Database, BrainCircuit, Loader2, 
 type SourceType = 'upload' | 'image' | 'video' | 'scanned-pdf' | 'link' | 'text';
 
 import { api } from '../../services/api';
+import { useStore } from '../../store/useStore';
 
 type UploadPhase = 'pending' | 'uploading' | 'stored' | 'queued' | 'failed';
 
@@ -18,6 +19,9 @@ interface UploadStatus {
   phase: UploadPhase;
   message?: string;
   sourceId?: string;
+  evidenceAssetId?: string;
+  sha256?: string;
+  duplicateAssetIds?: string[];
 }
 
 const NEXUS_CORPUS_PATH = 'C:\\Users\\Inf3r\\Downloads\\Nexus Assets\\NEXUS_PROJECT_SPACE\\00_DOCTRINE\\MASTER_HTML';
@@ -43,6 +47,11 @@ function getApiErrorMessage(error: any): string {
 }
 
 export function SourcesManager() {
+  const embeddingWorker = useStore((state) => state.telemetry.ingestionHealth.embeddingWorker);
+  const diagnostics = useStore((state) => state.diagnostics);
+  const embeddingReady = embeddingWorker?.status === 'ready';
+  const evidenceFact = diagnostics?.capabilities?.evidenceVault;
+  const evidenceProbe = diagnostics?.evidence;
   const [sourceType, setSourceType] = useState<SourceType>('upload');
   const [urls, setUrls] = useState('');
   const [textContent, setTextContent] = useState('');
@@ -68,12 +77,26 @@ export function SourcesManager() {
     setSuccess(null);
   };
 
-  const handleNexusCorpusFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleNexusCorpusFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     const corpusFiles = files.filter((file) => NEXUS_CORPUS_EXTENSIONS.test(file.name));
     if (!corpusFiles.length) {
       setError('No Markdown or text files were selected for Nexus Corpus import.');
       return;
+    }
+    try {
+      await api.evidence.intakeSources.create({
+        label: 'Nexus Corpus MASTER_HTML',
+        path: NEXUS_CORPUS_PATH,
+        sourceKind: 'nexus_corpus',
+        enabled: true,
+        provenance: {
+          mode: 'user_selected_files',
+          note: 'Registered for provenance only; renderer still passes selected files through normal upload flow.'
+        }
+      });
+    } catch (registrationError) {
+      console.warn('Could not register Nexus Corpus intake source', registrationError);
     }
     if (corpusFiles.length > 50) {
       setSuccess(`Selected the first 50 Markdown/Text files from Nexus Corpus. ${corpusFiles.length - 50} files were left out by the current upload limit.`);
@@ -121,10 +144,14 @@ export function SourcesManager() {
                 embed: false
               });
               submitted += 1;
+              const duplicateNote = source?.duplicateAssetIds?.length ? `; duplicate hash matches ${source.duplicateAssetIds.length} prior asset${source.duplicateAssetIds.length === 1 ? '' : 's'}` : '';
               setFileStatus(index, {
                 phase: 'stored',
-                message: 'Stored as text source; embeddings were not run',
-                sourceId: source?.id
+                message: `Stored as text source; evidence ${source?.evidenceStatus || 'not verified'}${source?.sha256 ? ` (${String(source.sha256).slice(0, 10)})` : ''}${duplicateNote}`,
+                sourceId: source?.id,
+                evidenceAssetId: source?.evidenceAssetId,
+                sha256: source?.sha256,
+                duplicateAssetIds: source?.duplicateAssetIds || []
               });
               continue;
             }
@@ -132,16 +159,20 @@ export function SourcesManager() {
             const formData = new FormData();
             formData.append('file', file);
             formData.append('type', 'upload');
-            formData.append('embed', shouldEmbed.toString());
+            formData.append('embed', (embeddingReady && shouldEmbed).toString());
             formData.append('delete_source', 'false');
             formData.append('async_processing', 'true');
 
             const source = await api.sources.create(formData);
             submitted += 1;
+            const duplicateNote = source?.duplicateAssetIds?.length ? `; duplicate hash matches ${source.duplicateAssetIds.length} prior asset${source.duplicateAssetIds.length === 1 ? '' : 's'}` : '';
             setFileStatus(index, {
               phase: 'queued',
-              message: source?.command_id ? 'Queued for backend processing; text extraction is not verified yet' : 'Submitted to source library',
-              sourceId: source?.id
+              message: `${source?.command_id ? 'Queued for backend processing; text extraction is not verified yet' : 'Submitted to source library'}; evidence ${source?.evidenceStatus || 'not verified'}${source?.sha256 ? ` (${String(source.sha256).slice(0, 10)})` : ''}${duplicateNote}`,
+              sourceId: source?.id,
+              evidenceAssetId: source?.evidenceAssetId,
+              sha256: source?.sha256,
+              duplicateAssetIds: source?.duplicateAssetIds || []
             });
           } catch (fileError: any) {
             failed += 1;
@@ -158,13 +189,13 @@ export function SourcesManager() {
           setError(`Failed ${failed} file${failed === 1 ? '' : 's'}: ${failures.join(' | ')}`);
         }
       } else if (sourceType === 'text') {
-        await api.sources.createJson({
+        const source = await api.sources.createJson({
           title: textTitle,
           content: textContent,
           type: 'text',
-          embed: shouldEmbed
+          embed: embeddingReady && shouldEmbed
         });
-        setSuccess('Text source submitted to the local backend.');
+        setSuccess(`Text source submitted to the local backend. Evidence ${source?.evidenceStatus || 'not verified'}${source?.sha256 ? ` (${String(source.sha256).slice(0, 10)})` : ''}.`);
       } else if (sourceType === 'link') {
         // Assume backend handles list of urls
         const urlList = urls.split('\n').filter(u => u.trim() !== '');
@@ -172,7 +203,7 @@ export function SourcesManager() {
           await api.sources.createJson({
             url: url.trim(),
             type: 'link',
-            embed: shouldEmbed
+            embed: embeddingReady && shouldEmbed
           });
         }
         setSuccess(`Submitted ${urlList.length} link source${urlList.length === 1 ? '' : 's'} to the local backend.`);
@@ -268,6 +299,22 @@ export function SourcesManager() {
                   Select Nexus Corpus
                 </Button>
               </div>
+              <div style={{ padding: '0.85rem 1rem', background: 'var(--panel-subtle)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '0.75rem', alignItems: 'center' }}>
+                <div style={{ minWidth: 0 }}>
+                  <strong style={{ display: 'block', fontSize: '0.85rem' }}>Evidence Vault</strong>
+                  <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
+                    {evidenceFact?.blockingReason || evidenceFact?.lastError || evidenceFact?.evidence || 'Waiting for backend evidence diagnostics.'}
+                  </span>
+                </div>
+                <span style={{ color: evidenceFact?.status === 'ready' ? 'var(--signal-healthy)' : evidenceFact?.status === 'failed' ? 'var(--signal-error)' : 'var(--signal-warning)', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>
+                  {evidenceFact?.status || 'not verified'}
+                </span>
+                {evidenceProbe?.evidenceRoot && (
+                  <small style={{ gridColumn: '1 / -1', color: 'var(--color-text-muted)', overflowWrap: 'anywhere' }}>
+                    Root: {evidenceProbe.evidenceRoot} · Assets: {evidenceProbe.assetCount ?? 'Unknown'} · Snapshots: {evidenceProbe.snapshotCount ?? 'Unknown'} · Restore: not supported in V1
+                  </small>
+                )}
+              </div>
             </div>
           )}
 
@@ -362,10 +409,11 @@ export function SourcesManager() {
                   </div>
                 </label>
 
-                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', cursor: embeddingReady ? 'pointer' : 'default', opacity: embeddingReady ? 1 : 0.72 }}>
                   <input
                     type="checkbox"
-                    checked={shouldEmbed}
+                    checked={embeddingReady && shouldEmbed}
+                    disabled={!embeddingReady}
                     onChange={(e) => setShouldEmbed(e.target.checked)}
                     style={{ marginTop: '0.25rem', accentColor: 'var(--color-primary)', width: '1rem', height: '1rem' }}
                   />
@@ -375,7 +423,9 @@ export function SourcesManager() {
                       Generate Embeddings (Vectorize)
                     </span>
                     <p style={{ fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
-                      Optional command-worker path. Leave off for immediate text-source ingest; the UI will not claim embeddings unless the backend proves them.
+                      {embeddingReady
+                        ? 'Embedding worker probe passed. Vector output still reports only after the backend confirms it.'
+                        : `Blocked until diagnostics prove the embedding worker. Current status: ${embeddingWorker?.lastProbeStatus || embeddingWorker?.status || 'unknown'}.`}
                     </p>
                   </div>
                 </label>
@@ -403,6 +453,11 @@ export function SourcesManager() {
                       <div style={{ minWidth: 0 }}>
                         <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.85rem' }}>{status.name}</strong>
                         <small style={{ color: 'var(--color-text-muted)' }}>{status.message || `${(status.size / 1024).toFixed(1)} KB`}</small>
+                        {status.evidenceAssetId && (
+                          <small style={{ display: 'block', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            Evidence: {status.evidenceAssetId}{status.sha256 ? ` · sha256 ${status.sha256.slice(0, 12)}` : ''}
+                          </small>
+                        )}
                       </div>
                       <span style={{
                         color: status.phase === 'failed' ? 'var(--signal-error)' : status.phase === 'stored' ? 'var(--signal-healthy)' : status.phase === 'queued' || status.phase === 'uploading' ? 'var(--signal-warning)' : 'var(--color-text-muted)',

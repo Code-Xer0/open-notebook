@@ -10,6 +10,7 @@ All functions raise ValueError for business errors (router converts to HTTPExcep
 import ipaddress
 import os
 import socket
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -17,6 +18,7 @@ import httpx
 from loguru import logger
 from pydantic import SecretStr
 
+from api.evidence_service import safe_record_event
 from api.models import CredentialResponse
 from open_notebook.ai.model_discovery import classify_model_type
 from open_notebook.domain.credential import Credential
@@ -224,6 +226,9 @@ def credential_to_response(cred: Credential, model_count: int = 0) -> Credential
         credentials_path=cred.credentials_path,
         num_ctx=cred.num_ctx,
         has_api_key=cred.api_key is not None,
+        last_tested=str(cred.last_tested) if cred.last_tested else None,
+        last_test_success=cred.last_test_success,
+        last_test_message=cred.last_test_message,
         created=str(cred.created) if cred.created else "",
         updated=str(cred.updated) if cred.updated else "",
         model_count=model_count,
@@ -328,17 +333,47 @@ async def get_provider_status() -> dict:
     encryption_configured = bool(get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"))
 
     configured: Dict[str, bool] = {}
+    present: Dict[str, bool] = {}
+    tested: Dict[str, bool] = {}
+    usable: Dict[str, bool] = {}
     source: Dict[str, str] = {}
+    last_tested: Dict[str, Optional[str]] = {}
+    last_test_success: Dict[str, Optional[bool]] = {}
+    last_test_message: Dict[str, Optional[str]] = {}
 
     for provider in PROVIDER_ENV_CONFIG:
         env_configured = check_env_configured(provider)
+        latest_tested = None
+        latest_success = None
+        latest_message = None
         try:
             db_credentials = await Credential.get_by_provider(provider)
             db_configured = len(db_credentials) > 0
+            tested_credentials = [
+                cred for cred in db_credentials if cred.last_tested is not None
+            ]
+            if tested_credentials:
+                latest = sorted(
+                    tested_credentials,
+                    key=lambda cred: str(cred.last_tested or ""),
+                    reverse=True,
+                )[0]
+                latest_tested = str(latest.last_tested) if latest.last_tested else None
+                latest_success = latest.last_test_success
+                latest_message = latest.last_test_message
         except Exception:
             db_configured = False
 
-        configured[provider] = db_configured or env_configured
+        present[provider] = db_configured or env_configured
+        configured[provider] = present[provider]
+        tested[provider] = latest_tested is not None
+        # Environment-only credentials are present but not verified by the
+        # backend credential test table. They are not "usable" until a DB
+        # credential test passes.
+        usable[provider] = bool(latest_success)
+        last_tested[provider] = latest_tested
+        last_test_success[provider] = latest_success
+        last_test_message[provider] = latest_message
 
         if db_configured:
             source[provider] = "database"
@@ -350,6 +385,12 @@ async def get_provider_status() -> dict:
     return {
         "configured": configured,
         "source": source,
+        "present": present,
+        "tested": tested,
+        "usable": usable,
+        "lastTested": last_tested,
+        "lastTestSuccess": last_test_success,
+        "lastTestMessage": last_test_message,
         "encryption_configured": encryption_configured,
     }
 
@@ -369,6 +410,33 @@ async def test_credential(credential_id: str) -> dict:
     Returns dict with provider, success, message keys.
     """
     provider = "unknown"
+    cred: Optional[Credential] = None
+
+    async def finish(success: bool, message: str) -> dict:
+        nonlocal cred, provider
+        if cred is not None:
+            cred.last_tested = datetime.now(timezone.utc)
+            cred.last_test_success = success
+            cred.last_test_message = message[:500]
+            try:
+                await cred.save()
+            except Exception as save_error:
+                logger.warning(
+                    f"Credential test completed but failed to persist result for {credential_id}: {save_error}"
+                )
+        await safe_record_event(
+            "credential.test",
+            status="stored" if success else "failed",
+            subject_table="credential",
+            subject_id=credential_id,
+            payload={
+                "provider": provider,
+                "success": success,
+                "message": message[:500],
+            },
+        )
+        return {"provider": provider, "success": success, "message": message}
+
     try:
         cred = await Credential.get(credential_id)
         config = cred.to_esperanto_config()
@@ -385,21 +453,17 @@ async def test_credential(credential_id: str) -> dict:
         if provider == "ollama":
             base_url = config.get("base_url", "http://localhost:11434")
             success, message = await _test_ollama_connection(base_url)
-            return {"provider": provider, "success": success, "message": message}
+            return await finish(success, message)
 
         if provider == "openai_compatible":
             base_url = config.get("base_url")
             api_key = config.get("api_key")
             if not base_url:
-                return {
-                    "provider": provider,
-                    "success": False,
-                    "message": "No base URL configured",
-                }
+                return await finish(False, "No base URL configured")
             success, message = await _test_openai_compatible_connection(
                 base_url, api_key
             )
-            return {"provider": provider, "success": success, "message": message}
+            return await finish(success, message)
 
         if provider == "azure":
             success, message = await _test_azure_connection(
@@ -407,7 +471,7 @@ async def test_credential(credential_id: str) -> dict:
                 api_key=config.get("api_key"),
                 api_version=config.get("api_version"),
             )
-            return {"provider": provider, "success": success, "message": message}
+            return await finish(success, message)
 
         # Standard provider: use Esperanto to create and test
         from esperanto.factory import AIFactory
@@ -415,19 +479,11 @@ async def test_credential(credential_id: str) -> dict:
         from open_notebook.ai.connection_tester import TEST_MODELS
 
         if provider not in TEST_MODELS:
-            return {
-                "provider": provider,
-                "success": False,
-                "message": f"Unknown provider: {provider}",
-            }
+            return await finish(False, f"Unknown provider: {provider}")
 
         test_model, test_type = TEST_MODELS[provider]
         if not test_model:
-            return {
-                "provider": provider,
-                "success": False,
-                "message": f"No test model configured for {provider}",
-            }
+            return await finish(False, f"No test model configured for {provider}")
 
         if test_type == "language":
             model = AIFactory.create_language(
@@ -435,43 +491,35 @@ async def test_credential(credential_id: str) -> dict:
             )
             lc_model = model.to_langchain()
             await lc_model.ainvoke("Hi")
-            return {"provider": provider, "success": True, "message": "Connection successful"}
+            return await finish(True, "Connection successful")
 
         elif test_type == "embedding":
             model = AIFactory.create_embedding(
                 model_name=test_model, provider=provider, config=config
             )
             await model.aembed(["test"])
-            return {"provider": provider, "success": True, "message": "Connection successful"}
+            return await finish(True, "Connection successful")
 
         elif test_type == "text_to_speech":
             AIFactory.create_text_to_speech(model_name=test_model, provider=provider, config=config)
-            return {
-                "provider": provider,
-                "success": True,
-                "message": "Connection successful (key format valid)",
-            }
+            return await finish(True, "Connection successful (key format valid)")
 
-        return {
-            "provider": provider,
-            "success": False,
-            "message": f"Unsupported test type: {test_type}",
-        }
+        return await finish(False, f"Unsupported test type: {test_type}")
 
     except Exception as e:
         error_msg = str(e)
         if "401" in error_msg or "unauthorized" in error_msg.lower():
-            return {"provider": provider, "success": False, "message": "Invalid API key"}
+            return await finish(False, "Invalid API key")
         elif "403" in error_msg or "forbidden" in error_msg.lower():
-            return {"provider": provider, "success": False, "message": "API key lacks required permissions"}
+            return await finish(False, "API key lacks required permissions")
         elif "rate" in error_msg.lower() and "limit" in error_msg.lower():
-            return {"provider": provider, "success": True, "message": "Rate limited - but connection works"}
+            return await finish(True, "Rate limited - but connection works")
         elif "not found" in error_msg.lower() and "model" in error_msg.lower():
-            return {"provider": provider, "success": True, "message": "API key valid (test model not available)"}
+            return await finish(True, "API key valid (test model not available)")
         else:
             logger.debug(f"Test connection error for credential {credential_id}: {e}")
             truncated = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
-            return {"provider": provider, "success": False, "message": f"Error: {truncated}"}
+            return await finish(False, f"Error: {truncated}")
 
 
 async def discover_with_config(provider: str, config: dict) -> List[dict]:

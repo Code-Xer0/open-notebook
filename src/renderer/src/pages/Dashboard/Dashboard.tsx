@@ -21,6 +21,7 @@ import { api } from '../../services/api';
 import { restartSidecars, refreshSidecarsOnce } from '../../services/sidecars';
 import { useStore } from '../../store/useStore';
 import type { ManagedSidecarStatus } from '../../../../preload/index';
+import { capabilityColor } from '../../components/CapabilityBadge';
 
 type NotebookRecord = {
   id?: string;
@@ -68,7 +69,7 @@ function pickName(item: NotebookRecord | SourceRecord, fallback: string): string
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const { backend, telemetry, sidecars } = useStore();
+  const { backend, telemetry, sidecars, diagnostics } = useStore();
   const [notebooks, setNotebooks] = React.useState<NotebookRecord[]>([]);
   const [sources, setSources] = React.useState<SourceRecord[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -79,6 +80,9 @@ export function Dashboard() {
   const isOnline = backend.status === 'online';
   const port5055 = sidecars?.ports.find((p) => p.port === 5055);
   const selectedNotebookPath = selectedNotebook?.id ? `/chat/${encodeURIComponent(selectedNotebook.id)}` : null;
+  const chatReady = diagnostics?.capabilities?.chat?.status === 'ready';
+  const migrationsFact = diagnostics?.capabilities?.migrations;
+  const credentialsFact = diagnostics?.capabilities?.credentials;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -138,19 +142,21 @@ export function Dashboard() {
     },
     {
       label: 'Migrations',
-      value: isOnline ? 'API reachable; use Diagnostics for schema detail' : 'Not verified',
+      value: migrationsFact?.evidence || (isOnline ? 'API reachable; schema not verified yet' : 'Not verified'),
       phase: 'idle',
-      status: 'Not verified',
+      status: migrationsFact?.status || 'Not verified',
+      color: capabilityColor(migrationsFact?.status),
       icon: <CheckCircle2 size={15} />
     },
     {
-      label: 'Auth',
-      value: 'Local mode; no remote auth claim',
+      label: 'Providers',
+      value: credentialsFact?.blockingReason || credentialsFact?.evidence || 'Provider credential tests not loaded',
       phase: 'idle',
-      status: 'Local only',
+      status: credentialsFact?.status || 'Not verified',
+      color: capabilityColor(credentialsFact?.status),
       icon: <ShieldCheck size={15} />
     }
-  ] satisfies Array<{ label: string; value: string; phase: ManagedSidecarStatus['phase']; status?: string; icon: React.ReactNode }>;
+  ] satisfies Array<{ label: string; value: string; phase: ManagedSidecarStatus['phase']; status?: string; color?: string; icon: React.ReactNode }>;
 
   return (
     <div className="notebook-workspace">
@@ -168,9 +174,9 @@ export function Dashboard() {
           </button>
           <button
             className="btn primary"
-            disabled={!selectedNotebookPath}
+            disabled={!selectedNotebookPath || !chatReady}
             onClick={() => selectedNotebookPath && navigate(selectedNotebookPath)}
-            title={selectedNotebookPath ? 'Ask the first recent notebook' : 'Create or open a notebook before asking'}
+            title={selectedNotebookPath ? (chatReady ? 'Ask the first recent notebook' : diagnostics?.capabilities?.chat?.blockingReason || 'Chat is not ready yet') : 'Create or open a notebook before asking'}
           >
             <MessageSquare size={15} /> Ask notebook
           </button>
@@ -180,12 +186,12 @@ export function Dashboard() {
       <section className="sidecar-strip" aria-label="Sidecar readiness">
         {sidecarItems.map((item) => (
           <div key={item.label} className="sidecar-tile">
-            <div className="sidecar-icon" style={{ color: statusColor[item.phase] }}>
+            <div className="sidecar-icon" style={{ color: item.color || statusColor[item.phase] }}>
               {item.icon}
             </div>
             <div>
               <span>{item.label}</span>
-              <strong style={{ color: statusColor[item.phase] }}>{item.status || statusLabel[item.phase]}</strong>
+              <strong style={{ color: item.color || statusColor[item.phase] }}>{item.status || statusLabel[item.phase]}</strong>
               <small title={item.value}>{item.value}</small>
             </div>
           </div>
@@ -305,7 +311,7 @@ export function Dashboard() {
               placeholder="Ask a source-grounded question..."
               disabled={!isOnline || !selectedNotebook}
             />
-            <button className="btn primary" disabled={!isOnline || !selectedNotebookPath || !prompt.trim()} onClick={() => selectedNotebookPath && navigate(selectedNotebookPath)}>
+            <button className="btn primary" disabled={!isOnline || !selectedNotebookPath || !prompt.trim() || !chatReady} onClick={() => selectedNotebookPath && navigate(selectedNotebookPath)} title={chatReady ? 'Open grounded chat' : diagnostics?.capabilities?.chat?.blockingReason || 'Chat is blocked until provider setup is verified'}>
               <MessageSquare size={15} /> Open chat
             </button>
 

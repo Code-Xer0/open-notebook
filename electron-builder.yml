@@ -8,8 +8,13 @@ files:
   - '!src/*'
   - '!backend/*'
   - '!resources/bin/*'
+  - '!data/**/*'
+  - '!output/**/*'
+  - '!scripts/**/*'
+  - '!docs/**/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{AGENTS.md,CLAUDE.md,HYPERION_POSTURE.md,old_index.css,search.py,upload_files.py}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 extraResources:

@@ -28,9 +28,9 @@ from loguru import logger
 
 def get_secret_from_env(var_name: str) -> Optional[str]:
     """
-    Get a secret from environment, supporting Docker secrets pattern.
+    Get a secret from environment, supporting a generic file-backed secret pattern.
 
-    Checks for VAR_FILE first (Docker secrets), then falls back to VAR.
+    Checks for VAR_FILE first, then falls back to VAR.
 
     Args:
         var_name: Base name of the environment variable (e.g., "OPEN_NOTEBOOK_ENCRYPTION_KEY")
@@ -38,7 +38,7 @@ def get_secret_from_env(var_name: str) -> Optional[str]:
     Returns:
         The secret value, or None if not configured.
     """
-    # Check for _FILE variant first (Docker secrets)
+    # Check for _FILE variant first (file-backed secrets)
     file_path = os.environ.get(f"{var_name}_FILE")
     if file_path:
         try:
@@ -64,7 +64,7 @@ def _get_or_create_encryption_key() -> str:
     Get encryption key from environment, requires explicit configuration.
 
     Priority:
-    1. OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE (Docker secrets)
+    1. OPEN_NOTEBOOK_ENCRYPTION_KEY_FILE (file-backed secret)
     2. OPEN_NOTEBOOK_ENCRYPTION_KEY (environment variable)
 
     For production deployments, you MUST set OPEN_NOTEBOOK_ENCRYPTION_KEY explicitly!
@@ -75,7 +75,7 @@ def _get_or_create_encryption_key() -> str:
     Raises:
         ValueError: If no encryption key is configured.
     """
-    # First check environment/Docker secrets
+    # First check file-backed or direct environment secrets
     key = get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY")
     if key:
         return key

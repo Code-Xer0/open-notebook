@@ -26,3 +26,8 @@ backend/data/
 *.sqlite
 .env
 .env.*
+
+# Hyperion alignment files (local-only — do not commit/push)
+HYPERION_POSTURE.md
+CLAUDE.md
+AGENTS.md

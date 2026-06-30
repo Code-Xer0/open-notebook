@@ -18,6 +18,7 @@ from api.image_capsule_models import (
     ImageCapsuleRegion,
     ImageCapsuleResponse,
 )
+from api.evidence_service import create_derivative, preserve_bytes, safe_record_event
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_create, repo_query, repo_update
 from open_notebook.domain.notebook import Asset, Notebook, Source
@@ -306,6 +307,29 @@ async def intake_image(
             "published_at": None,
         },
     ))
+    try:
+        await preserve_bytes(
+            content,
+            origin_kind="image_capsule",
+            source_filename=filename,
+            mime_type=mime_type,
+            original_path=str(original_path),
+            image_capsule_id=str(record["id"]),
+            provenance={
+                "parserMode": "heuristic_manual",
+                "projectNamespace": project_namespace,
+                "capsuleAssetId": asset_id,
+            },
+        )
+    except Exception as exc:
+        logger.warning(f"Failed to preserve image capsule evidence for {record.get('id')}: {exc}")
+        await safe_record_event(
+            "image_capsule.evidence_failed",
+            status="failed",
+            subject_table="image_capsule",
+            subject_id=str(record.get("id")),
+            payload={"error": str(exc), "filename": filename},
+        )
     await _write_revision(str(record["id"]), "intake", record, "Raw image intake completed")
     return await _capsule_response(record)
 
@@ -399,6 +423,33 @@ async def publish_capsule(capsule_id: str, request: ImageCapsulePublishRequest) 
             logger.warning(f"Failed to link image capsule source to notebook {notebook_id}: {exc}")
 
     await _replace_source_insights(str(source.id), capsule, context_card)
+    try:
+        asset_rows = await repo_query(
+            "SELECT id FROM file_asset WHERE image_capsule = $capsule ORDER BY created DESC LIMIT 1",
+            {"capsule": ensure_record_id(capsule.id)},
+        )
+        asset_id = str(asset_rows[0]["id"]) if asset_rows else None
+        await create_derivative(
+            derivative_type="context_card",
+            content=context_card,
+            asset_id=asset_id,
+            source_id=str(source.id),
+            provenance={
+                "capsuleId": capsule.id,
+                "canonicalAlias": canonical_alias,
+                "parserMode": "heuristic_manual",
+            },
+        )
+    except Exception as exc:
+        logger.warning(f"Failed to create image capsule evidence derivative for {capsule.id}: {exc}")
+        await safe_record_event(
+            "image_capsule.publish_evidence_failed",
+            status="failed",
+            source_id=str(source.id),
+            subject_table="image_capsule",
+            subject_id=capsule.id,
+            payload={"error": str(exc)},
+        )
 
     updated = await repo_update(
         "image_capsule",

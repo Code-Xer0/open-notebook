@@ -204,7 +204,29 @@ class ReadingManifestResponse(ReadingManifestCreate):
 
 class RenderManifestRequest(BaseModel):
     segmentIds: Optional[List[str]] = None
+    renderMode: Literal["selected", "chapter"] = "chapter"
+    maxSegments: int = Field(default=8, ge=1, le=50)
     forceProvider: Optional[str] = None
+
+
+class RenderManifestJobResponse(BaseModel):
+    commandId: str
+    manifestId: str
+    acceptedSegmentIds: List[str] = Field(default_factory=list)
+    status: str = "submitted"
+
+
+class RegeneratePerformanceTakeRequest(BaseModel):
+    forceProvider: Optional[str] = None
+    settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RegeneratePerformanceTakeJobResponse(BaseModel):
+    commandId: str
+    takeId: str
+    manifestId: str
+    segmentId: str
+    status: str = "submitted"
 
 
 class AudioAssetResponse(BaseModel):

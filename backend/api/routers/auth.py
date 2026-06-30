@@ -15,7 +15,7 @@ async def get_auth_status():
     """
     Check if authentication is enabled.
     Returns whether a password is required to access the API.
-    Supports Docker secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
+    Supports file-backed secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
     """
     auth_enabled = bool(get_secret_from_env("OPEN_NOTEBOOK_PASSWORD"))
 

@@ -9,7 +9,7 @@ packages and ship `open_notebook` package data (the .surrealql migrations)."""
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_data_files
+from PyInstaller.utils.hooks import collect_all, collect_data_files, copy_metadata
 
 datas = []
 binaries = []
@@ -56,6 +56,15 @@ for _pkg in _packages:
         hiddenimports += h
     except Exception as _e:  # package not installed / differently named — skip
         print(f"[backend.spec] skip {_pkg}: {_e}")
+
+# Some libraries look up their installed distribution metadata at runtime via
+# importlib.metadata.version(...). PyInstaller's module collection can include
+# code without dist-info, which breaks frozen command registration.
+for _metadata_pkg in ["imageio", "imageio_ffmpeg"]:
+    try:
+        datas += copy_metadata(_metadata_pkg, recursive=True)
+    except Exception as _e:
+        print(f"[backend.spec] metadata skip {_metadata_pkg}: {_e}")
 
 # Some mypyc-compiled dependencies install top-level .pyd helpers with hashed
 # module names, so package collection does not discover them. Bundle them at the

@@ -1,0 +1,5 @@
+-- Rollback Migration 17: Remove credential test facts.
+
+REMOVE FIELD last_tested ON TABLE credential;
+REMOVE FIELD last_test_success ON TABLE credential;
+REMOVE FIELD last_test_message ON TABLE credential;

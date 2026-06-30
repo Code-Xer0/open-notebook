@@ -13,7 +13,7 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
     """
     Middleware to check password authentication for all API requests.
     Always active with default password if OPEN_NOTEBOOK_PASSWORD is not set.
-    Supports Docker secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
+    Supports file-backed secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
     """
 
     def __init__(self, app, excluded_paths: Optional[list] = None):
@@ -85,7 +85,7 @@ def check_api_password(
     """
     Utility function to check API password.
     Can be used as a dependency in individual routes if needed.
-    Supports Docker secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
+    Supports file-backed secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
     Returns True without checking credentials if OPEN_NOTEBOOK_PASSWORD is not configured.
     Raises 401 if credentials are missing or don't match the configured password.
     """

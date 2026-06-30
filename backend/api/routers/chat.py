@@ -7,7 +7,9 @@ from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from api.credentials_service import get_provider_status
 from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.ai.models import DefaultModels, Model
 from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
 from open_notebook.exceptions import (
     ConfigurationError,
@@ -92,6 +94,56 @@ class BuildContextResponse(BaseModel):
 class SuccessResponse(BaseModel):
     success: bool = Field(True, description="Operation success status")
     message: str = Field(..., description="Success message")
+
+
+async def _assert_chat_ready(model_override: Optional[str] = None) -> str:
+    model_id = model_override
+    if not model_id:
+        defaults = await DefaultModels.get_instance()
+        model_id = defaults.default_chat_model  # type: ignore[attr-defined]
+
+    if not model_id:
+        raise HTTPException(
+            status_code=503,
+            detail="Provider/model not configured: no default chat model is selected.",
+        )
+
+    model = await Model.get(str(model_id))
+    if not model:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Provider/model not configured: chat model {model_id} was not found.",
+        )
+
+    provider = (model.provider or "").lower()
+    if not provider:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Provider/model not configured: chat model {model_id} has no provider.",
+        )
+
+    provider_status = await get_provider_status()
+    if not provider_status.get("usable", {}).get(provider):
+        present = provider_status.get("present", {}).get(provider)
+        tested = provider_status.get("tested", {}).get(provider)
+        if present and not tested:
+            reason = (
+                f"{provider} credential material is present but no backend "
+                "credential test has passed."
+            )
+        elif present:
+            reason = (
+                provider_status.get("lastTestMessage", {}).get(provider)
+                or f"{provider} credential is present but not usable."
+            )
+        else:
+            reason = f"{provider} credential is missing."
+        raise HTTPException(
+            status_code=503,
+            detail=f"Provider/model not configured: {reason}",
+        )
+
+    return str(model_id)
 
 
 @router.get("/chat/sessions", response_model=List[ChatSessionResponse])
@@ -358,6 +410,7 @@ async def execute_chat(request: ExecuteChatRequest):
             if request.model_override is not None
             else getattr(session, "model_override", None)
         )
+        await _assert_chat_ready(model_override)
 
         # Get current state
         # Use sync get_state() in a thread since SqliteSaver doesn't support async
@@ -406,6 +459,8 @@ async def execute_chat(request: ExecuteChatRequest):
             )
 
         return ExecuteChatResponse(session_id=request.session_id, messages=messages)
+    except HTTPException:
+        raise
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Session not found")
     except ConfigurationError as e:

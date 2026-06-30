@@ -23,6 +23,7 @@ import { api } from '../../services/api';
 import { openSidecarLog, refreshSidecarsOnce, restartSidecars } from '../../services/sidecars';
 import { useStore } from '../../store/useStore';
 import { codexDarkTheme, codexLightTheme, themePresets, themeSwatchKeys, type ThemeMode } from '../../theme';
+import type { CredentialStatus } from '../../types/runtime';
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SettingsIcon },
@@ -42,10 +43,22 @@ const SECTIONS = [
 type SectionId = (typeof SECTIONS)[number]['id'];
 type Tone = 'healthy' | 'warning' | 'error' | 'muted' | 'accent';
 
-interface CredentialStatus {
-  configured?: Record<string, boolean>;
-  source?: Record<string, string>;
-  encryption_configured?: boolean;
+interface BackendModel {
+  id: string;
+  name: string;
+  provider: string;
+  type: string;
+  credential?: string | null;
+}
+
+interface DefaultModels {
+  default_chat_model?: string | null;
+  default_transformation_model?: string | null;
+  large_context_model?: string | null;
+  default_text_to_speech_model?: string | null;
+  default_speech_to_text_model?: string | null;
+  default_embedding_model?: string | null;
+  default_tools_model?: string | null;
 }
 
 const toneColor: Record<Tone, string> = {
@@ -95,11 +108,21 @@ function CheckboxField({ label, checked, onChange, disabled = false }: { label: 
 }
 
 export function Settings() {
-  const { settings, updateSettings, backend, sidecars } = useStore();
+  const { settings, updateSettings, backend, sidecars, diagnostics } = useStore();
   const [activeTab, setActiveTab] = React.useState<SectionId>('general');
   const [logResult, setLogResult] = React.useState<string | null>(null);
   const [credentialStatus, setCredentialStatus] = React.useState<CredentialStatus | null>(null);
   const [credentialStatusError, setCredentialStatusError] = React.useState<string | null>(null);
+  const [backendModels, setBackendModels] = React.useState<BackendModel[]>([]);
+  const [defaultModels, setDefaultModels] = React.useState<DefaultModels | null>(null);
+  const [bootstrapDraft, setBootstrapDraft] = React.useState({
+    provider: 'openai',
+    name: 'OpenAI default credential',
+    apiKey: '',
+    chatModel: 'gpt-4o-mini'
+  });
+  const [bootstrapStatus, setBootstrapStatus] = React.useState<string | null>(null);
+  const [isBootstrapping, setIsBootstrapping] = React.useState(false);
 
   const hasStalePortOwner = Boolean(sidecars?.ports.some((port) => port.staleExternal));
   const sidecarsReady = sidecars?.surreal.phase === 'online' && sidecars?.backend.phase === 'online' && !hasStalePortOwner;
@@ -111,17 +134,27 @@ export function Settings() {
       if (backend.status !== 'online') {
         setCredentialStatus(null);
         setCredentialStatusError(null);
+        setBackendModels([]);
+        setDefaultModels(null);
         return;
       }
       try {
-        const status = await api.credentials.status();
+        const [status, defaults, models] = await Promise.all([
+          api.credentials.status(),
+          api.models.getDefaults(),
+          api.models.list()
+        ]);
         if (!cancelled) {
           setCredentialStatus(status);
+          setDefaultModels(defaults);
+          setBackendModels(Array.isArray(models) ? models : []);
           setCredentialStatusError(null);
         }
       } catch (error: any) {
         if (!cancelled) {
           setCredentialStatus(null);
+          setDefaultModels(null);
+          setBackendModels([]);
           setCredentialStatusError(error?.response?.data?.detail || error?.message || 'Credential status unavailable');
         }
       }
@@ -131,6 +164,76 @@ export function Settings() {
       cancelled = true;
     };
   }, [backend.status]);
+
+  async function refreshProviderSetup() {
+    if (backend.status !== 'online') return;
+    const [status, defaults, models] = await Promise.all([
+      api.credentials.status(),
+      api.models.getDefaults(),
+      api.models.list()
+    ]);
+    setCredentialStatus(status);
+    setDefaultModels(defaults);
+    setBackendModels(Array.isArray(models) ? models : []);
+    setCredentialStatusError(null);
+  }
+
+  async function handleBootstrapChatProvider() {
+    setIsBootstrapping(true);
+    setBootstrapStatus(null);
+    try {
+      if (!bootstrapDraft.apiKey.trim()) {
+        setBootstrapStatus('Enter a provider API key before creating a backend credential.');
+        return;
+      }
+      if (!bootstrapDraft.chatModel.trim()) {
+        setBootstrapStatus('Enter a chat model name before assigning a default model.');
+        return;
+      }
+
+      const credential = await api.credentials.create({
+        name: bootstrapDraft.name.trim() || `${bootstrapDraft.provider} credential`,
+        provider: bootstrapDraft.provider,
+        modalities: ['language'],
+        api_key: bootstrapDraft.apiKey.trim()
+      });
+      const testResult = await api.credentials.test(credential.id);
+
+      let model = backendModels.find((item) => (
+        item.provider === bootstrapDraft.provider
+        && item.type === 'language'
+        && item.name.toLowerCase() === bootstrapDraft.chatModel.trim().toLowerCase()
+      ));
+
+      if (!model) {
+        model = await api.models.create({
+          name: bootstrapDraft.chatModel.trim(),
+          provider: bootstrapDraft.provider,
+          type: 'language',
+          credential: credential.id
+        });
+      }
+      if (!model) {
+        throw new Error('Backend did not return a model record.');
+      }
+
+      await api.models.updateDefaults({
+        ...(defaultModels || {}),
+        default_chat_model: model.id
+      });
+      await refreshProviderSetup();
+      setBootstrapDraft((current) => ({ ...current, apiKey: '' }));
+      setBootstrapStatus(
+        testResult?.success
+          ? `Credential test passed. Default chat model set to ${bootstrapDraft.provider}/${model.name}.`
+          : `Credential saved and default chat model set, but test did not pass: ${testResult?.message || 'provider did not confirm readiness'}`
+      );
+    } catch (error: any) {
+      setBootstrapStatus(error?.response?.data?.detail || error?.message || 'Provider bootstrap failed.');
+    } finally {
+      setIsBootstrapping(false);
+    }
+  }
 
   async function handleOpenLog() {
     const result = await openSidecarLog();
@@ -341,26 +444,88 @@ export function Settings() {
 
       case 'cloud-providers': {
         const providerRows = ['openai', 'anthropic', 'google', 'elevenlabs', 'openai_compatible'];
-        const configuredProviders = providerRows.filter((provider) => credentialStatus?.configured?.[provider]);
+        const presentProviders = providerRows.filter((provider) => credentialStatus?.present?.[provider] || credentialStatus?.configured?.[provider]);
+        const usableProviders = providerRows.filter((provider) => credentialStatus?.usable?.[provider]);
+        const defaultChatModel = backendModels.find((model) => model.id === defaultModels?.default_chat_model);
+        const defaultChatUsable = defaultChatModel ? Boolean(credentialStatus?.usable?.[defaultChatModel.provider]) : false;
         return (
           <>
             <StatusCard
               title="Cloud Providers"
-              status={credentialStatusError ? 'Status unavailable' : configuredProviders.length ? 'Backend credentials present - not tested here' : 'No backend credentials configured'}
-              detail={credentialStatusError || 'Provider truth comes from backend credential records and explicit credential tests, not renderer localStorage fields.'}
-              tone={credentialStatusError ? 'error' : configuredProviders.length ? 'warning' : 'muted'}
+              status={credentialStatusError ? 'Status unavailable' : usableProviders.length ? `Usable tested: ${usableProviders.join(', ')}` : presentProviders.length ? 'Provider material present - not verified' : 'No backend providers present'}
+              detail={credentialStatusError || 'Provider truth comes from backend credential records plus persisted credential tests, not renderer localStorage fields.'}
+              tone={credentialStatusError ? 'error' : usableProviders.length ? 'healthy' : presentProviders.length ? 'warning' : 'muted'}
             />
+            <StatusCard
+              title="Chat Bootstrap"
+              status={defaultChatModel ? `Default: ${defaultChatModel.provider}/${defaultChatModel.name}` : 'No backend default chat model'}
+              detail={defaultChatModel ? (defaultChatUsable ? 'Grounded chat can enable because the matching provider has a passing backend test.' : 'Default model exists, but chat stays blocked until the matching backend credential test passes.') : 'Create/test a backend credential, register a language model, and assign it as the default chat model.'}
+              tone={defaultChatUsable ? 'healthy' : defaultChatModel ? 'warning' : 'warning'}
+              action={<button className="btn" onClick={() => void refreshProviderSetup()} disabled={backend.status !== 'online'}><RefreshCw size={14} /> Refresh</button>}
+            />
+            <div className="settings-grid" style={{ marginBottom: '18px' }}>
+              <Field label="Provider">
+                <Select
+                  ariaLabel="Bootstrap Provider"
+                  value={bootstrapDraft.provider}
+                  onChange={(provider) => setBootstrapDraft((current) => ({ ...current, provider }))}
+                  options={[
+                    { value: 'openai', label: 'OpenAI' },
+                    { value: 'anthropic', label: 'Anthropic' },
+                    { value: 'google', label: 'Google' },
+                    { value: 'openai_compatible', label: 'OpenAI Compatible' }
+                  ]}
+                />
+              </Field>
+              <Field label="Credential Name">
+                <input
+                  className="glass-input"
+                  value={bootstrapDraft.name}
+                  onChange={(e) => setBootstrapDraft((current) => ({ ...current, name: e.target.value }))}
+                  placeholder="Backend credential label"
+                />
+              </Field>
+              <Field label="API Key" hint="Stored encrypted by the backend; this field is cleared after submit.">
+                <input
+                  className="glass-input"
+                  type="password"
+                  value={bootstrapDraft.apiKey}
+                  onChange={(e) => setBootstrapDraft((current) => ({ ...current, apiKey: e.target.value }))}
+                  placeholder="Provider API key"
+                />
+              </Field>
+              <Field label="Default Chat Model">
+                <input
+                  className="glass-input"
+                  value={bootstrapDraft.chatModel}
+                  onChange={(e) => setBootstrapDraft((current) => ({ ...current, chatModel: e.target.value }))}
+                  placeholder="e.g. gpt-4o-mini"
+                />
+              </Field>
+            </div>
+            <div className="settings-actions-row" style={{ marginBottom: '18px' }}>
+              <button className="btn primary" disabled={isBootstrapping || backend.status !== 'online'} onClick={() => void handleBootstrapChatProvider()}>
+                {isBootstrapping ? 'Testing...' : 'Create/Test And Set Chat Default'}
+              </button>
+              <button className="btn" disabled={backend.status !== 'online'} onClick={() => void api.models.autoAssign().then(refreshProviderSetup).catch((error) => setBootstrapStatus(error?.response?.data?.detail || error?.message || 'Auto-assign failed.'))}>
+                Auto-Assign Existing Models
+              </button>
+            </div>
+            {bootstrapStatus && <div className="settings-note" style={{ marginBottom: '18px' }}>{bootstrapStatus}</div>}
             <div className="settings-grid">
               {providerRows.map((provider) => {
-                const configured = Boolean(credentialStatus?.configured?.[provider]);
+                const present = Boolean(credentialStatus?.present?.[provider] || credentialStatus?.configured?.[provider]);
+                const tested = Boolean(credentialStatus?.tested?.[provider]);
+                const usable = Boolean(credentialStatus?.usable?.[provider]);
                 const source = credentialStatus?.source?.[provider] || 'none';
+                const lastMessage = credentialStatus?.lastTestMessage?.[provider];
                 return (
                   <StatusCard
                     key={provider}
                     title={provider.replace('_', ' ')}
-                    status={configured ? `Configured via ${source}` : 'Not configured'}
-                    detail={configured ? 'Run a backend credential test before treating this provider as usable.' : 'No backend credential or environment key is reported for this provider.'}
-                    tone={configured ? 'warning' : 'muted'}
+                    status={usable ? `Usable via ${source}` : present ? (tested ? 'Test failed or stale' : `Present via ${source} - not tested`) : 'Not configured'}
+                    detail={usable ? (lastMessage || 'Latest backend credential test passed.') : present ? (lastMessage || 'Run a backend credential test before treating this provider as usable.') : 'No backend credential or environment key is reported for this provider.'}
+                    tone={usable ? 'healthy' : present ? 'warning' : 'muted'}
                   />
                 );
               })}
@@ -530,23 +695,39 @@ export function Settings() {
           <>
             <StatusCard
               title="Sidecars"
-              status={sidecarsReady ? 'Ready' : 'Not ready'}
+              status={sidecarsReady ? 'Owned ports reachable' : 'Not verified'}
               detail={hasStalePortOwner ? 'A required port is owned by an external process.' : sidecars?.lastError || sidecars?.backend.message || 'Waiting for Electron sidecar status.'}
               tone={sidecarsReady ? 'healthy' : sidecars?.lastError || hasStalePortOwner ? 'error' : 'warning'}
               action={<button className="btn" onClick={() => void refreshSidecarsOnce()}><RefreshCw size={14} /> Refresh</button>}
             />
             <div className="diagnostics-grid">
+              <div className="diagnostic-row"><span>Docker</span><strong>{diagnostics?.runtimeDependencies?.docker?.status || 'not required'}</strong></div>
               <div className="diagnostic-row"><span>Mode</span><strong>{sidecars?.mode || 'Unknown'}</strong></div>
               <div className="diagnostic-row"><span>App version</span><strong>{sidecars?.appVersion || 'Unknown'}</strong></div>
-              <div className="diagnostic-row"><span>Data dir</span><strong title={sidecars?.dataDir}>{sidecars?.dataDir || 'Unknown'}</strong></div>
-              <div className="diagnostic-row"><span>Log path</span><strong title={sidecars?.logPath}>{sidecars?.logPath || 'Unknown'}</strong></div>
-              <div className="diagnostic-row"><span>Backend resource</span><strong title={sidecars?.resources.backendPath}>{sidecars?.resources.backendExists ? 'Present' : 'Missing'}</strong></div>
-              <div className="diagnostic-row"><span>Surreal resource</span><strong title={sidecars?.resources.surrealPath}>{sidecars?.resources.surrealExists ? 'Present' : 'Missing'}</strong></div>
+              <div className="diagnostic-row"><span>Data dir</span><strong title={diagnostics?.runtimeDependencies?.dataDir?.path || sidecars?.dataDir}>{diagnostics?.runtimeDependencies?.dataDir?.path || sidecars?.dataDir || 'Unknown'}</strong></div>
+              <div className="diagnostic-row"><span>Log path</span><strong title={diagnostics?.runtimeDependencies?.logPath?.path || sidecars?.logPath}>{diagnostics?.runtimeDependencies?.logPath?.path || sidecars?.logPath || 'Unknown'}</strong></div>
+              <div className="diagnostic-row"><span>Backend resource</span><strong title={diagnostics?.runtimeDependencies?.backend?.path || sidecars?.resources.backendPath}>{diagnostics?.runtimeDependencies?.backend?.exists || sidecars?.resources.backendExists ? 'Present' : 'Missing'}</strong></div>
+              <div className="diagnostic-row"><span>Surreal resource</span><strong title={diagnostics?.runtimeDependencies?.surreal?.path || sidecars?.resources.surrealPath}>{diagnostics?.runtimeDependencies?.surreal?.exists || sidecars?.resources.surrealExists ? 'Present' : 'Missing'}</strong></div>
+              <div className="diagnostic-row"><span>Evidence vault</span><strong title={diagnostics?.evidence?.evidenceRoot}>{diagnostics?.evidence?.writable ? 'Writable' : diagnostics?.evidence?.status || 'Not verified'}</strong></div>
+              <div className="diagnostic-row"><span>Evidence assets</span><strong>{diagnostics?.evidence?.assetCount ?? 'Unknown'}</strong></div>
+              <div className="diagnostic-row"><span>Snapshot manifests</span><strong>{diagnostics?.evidence?.snapshotCount ?? 'Unknown'} · restore unsupported</strong></div>
+              <div className="diagnostic-row"><span>Latest snapshot</span><strong title={diagnostics?.evidence?.latestSnapshot?.manifestSha256}>{diagnostics?.evidence?.latestSnapshot?.reason || 'None recorded'}</strong></div>
               <div className="diagnostic-row"><span>SurrealDB</span><strong>{sidecars?.surreal.phase || 'Unknown'} {sidecars?.surreal.pid ? `pid ${sidecars.surreal.pid}` : ''}</strong></div>
               <div className="diagnostic-row"><span>Python API</span><strong>{sidecars?.backend.phase || 'Unknown'} {sidecars?.backend.pid ? `pid ${sidecars.backend.pid}` : ''}</strong></div>
               <div className="diagnostic-row"><span>Port owners</span><strong>{sidecars?.ports.length ? sidecars.ports.map((port) => `${port.port}:${port.pid || 'none'}${port.staleExternal ? ' stale' : port.ownedByCodex ? ' owned' : ''}`).join(' / ') : 'Unknown'}</strong></div>
               <div className="diagnostic-row"><span>Watchdog</span><strong>{sidecars?.watchdog.restartPending ? 'Restart pending' : sidecars?.watchdog.lastRestartReason || 'Idle'}</strong></div>
               <div className="diagnostic-row"><span>Previous sidecar PIDs</span><strong>{sidecars?.resources.previousPids.length ? sidecars.resources.previousPids.join(', ') : 'None recorded'}</strong></div>
+            </div>
+            <div className="settings-grid" style={{ marginTop: '18px' }}>
+              {Object.entries(diagnostics?.capabilities || {}).map(([name, fact]) => (
+                <StatusCard
+                  key={name}
+                  title={name.replace(/([A-Z])/g, ' $1')}
+                  status={fact.status}
+                  detail={fact.blockingReason || fact.lastError || fact.evidence}
+                  tone={fact.status === 'ready' || fact.status === 'stored' || fact.status === 'reachable' ? 'healthy' : fact.status === 'failed' ? 'error' : fact.status === 'not verified' || fact.status === 'mock' ? 'muted' : 'warning'}
+                />
+              ))}
             </div>
             <div className="settings-actions-row">
               <button className="btn" onClick={() => void restartSidecars()}><RefreshCw size={14} /> Restart Sidecars</button>

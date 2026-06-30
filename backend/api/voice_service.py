@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from loguru import logger
 
+from api.evidence_service import create_derivative, preserve_bytes, safe_record_event
 from api.voice_models import (
     ManuscriptIntakeRequest,
     ManuscriptResponse,
@@ -28,8 +29,10 @@ from api.voice_models import (
     VoiceCharacterCreate,
     VoiceCharacterResponse,
 )
+from open_notebook.ai.models import DefaultModels, Model
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_create, repo_query, repo_update
+from open_notebook.domain.credential import Credential
 from open_notebook.domain.notebook import Notebook, Source
 
 
@@ -39,6 +42,10 @@ RIGHTS_BLOCKERS = {
     "requires_consent",
     "expired_license",
 }
+
+SUPPORTED_TTS_PROVIDERS = {"openai_speech"}
+DEFAULT_OPENAI_TTS_MODEL = "gpt-4o-mini-tts"
+DEFAULT_OPENAI_TTS_VOICE = "alloy"
 
 
 def _single_row(result: Any) -> Dict[str, Any]:
@@ -175,6 +182,92 @@ def _take_response(record: Dict[str, Any]) -> PerformanceTakeResponse:
         created=_iso(record.get("created")),
         updated=_iso(record.get("updated")),
     )
+
+
+async def get_voice_provider_status() -> Dict[str, Any]:
+    """Return factual OpenAI speech readiness without performing generation."""
+    credential_source = "none"
+    has_credential = False
+    credential_id = None
+    last_error = None
+
+    try:
+        credentials = await Credential.get_by_provider("openai")
+        credential = next((item for item in credentials if item.api_key), None)
+        if credential:
+            has_credential = True
+            credential_source = "database"
+            credential_id = credential.id
+    except Exception as exc:
+        last_error = f"credential_error: {exc}"
+
+    if not has_credential and os.getenv("OPENAI_API_KEY"):
+        has_credential = True
+        credential_source = "environment"
+
+    default_tts_model = None
+    default_tts_model_name = None
+    default_tts_model_provider = None
+    try:
+        defaults = await DefaultModels.get_instance()
+        default_tts_model = getattr(defaults, "default_text_to_speech_model", None)
+        if default_tts_model:
+            model = await Model.get(default_tts_model)
+            default_tts_model_name = model.name
+            default_tts_model_provider = model.provider
+    except Exception as exc:
+        if not last_error:
+            last_error = f"default_model_error: {exc}"
+
+    if not has_credential:
+        return {
+            "status": "provider missing",
+            "provider": "openai",
+            "source": credential_source,
+            "credentialId": credential_id,
+            "defaultTextToSpeechModel": default_tts_model,
+            "defaultTextToSpeechModelName": default_tts_model_name,
+            "defaultTextToSpeechModelProvider": default_tts_model_provider,
+            "lastError": last_error,
+            "blockingReason": "OpenAI speech needs a backend OpenAI credential or OPENAI_API_KEY environment fallback.",
+        }
+
+    return {
+        "status": "configured",
+        "provider": "openai",
+        "source": credential_source,
+        "credentialId": credential_id,
+        "defaultTextToSpeechModel": default_tts_model,
+        "defaultTextToSpeechModelName": default_tts_model_name,
+        "defaultTextToSpeechModelProvider": default_tts_model_provider,
+        "lastError": last_error,
+        "blockingReason": None,
+    }
+
+
+async def _resolve_openai_api_key() -> Tuple[Optional[str], str]:
+    credentials = await Credential.get_by_provider("openai")
+    credential = next((item for item in credentials if item.api_key), None)
+    if credential and credential.api_key:
+        return credential.api_key.get_secret_value(), "database"
+    env_key = os.getenv("OPENAI_API_KEY")
+    if env_key:
+        return env_key, "environment"
+    return None, "none"
+
+
+async def _default_tts_model_name() -> Optional[str]:
+    try:
+        defaults = await DefaultModels.get_instance()
+        model_id = getattr(defaults, "default_text_to_speech_model", None)
+        if not model_id:
+            return None
+        model = await Model.get(model_id)
+        if model.provider.lower() != "openai":
+            return None
+        return model.name
+    except Exception:
+        return None
 
 
 async def _write_voice_revision(capsule_id: str, event: str, snapshot: Dict[str, Any], notes: Optional[str] = None) -> None:
@@ -570,16 +663,16 @@ async def _voice_for_segment(manifest: ReadingManifestResponse, segment: Manuscr
     return None
 
 
-async def _openai_speech(text: str, voice: VoiceCapsuleResponse, output_dir: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    api_key = os.getenv("OPENAI_API_KEY")
+async def _openai_speech(text: str, voice: VoiceCapsuleResponse, output_dir: Path) -> Tuple[Optional[Dict[str, Any]], Optional[str], Dict[str, Any]]:
+    api_key, credential_source = await _resolve_openai_api_key()
     if not api_key:
-        return None, "provider_not_configured: OPENAI_API_KEY is not set"
+        return None, "provider_not_configured: backend OpenAI credential is missing", {"credentialSource": credential_source}
     try:
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=api_key)
-        model = voice.model or "gpt-4o-mini-tts"
-        provider_voice = voice.voiceId or "alloy"
+        model = voice.model or await _default_tts_model_name() or DEFAULT_OPENAI_TTS_MODEL
+        provider_voice = voice.voiceId or DEFAULT_OPENAI_TTS_VOICE
         response_format = voice.providerSettings.get("response_format") or "mp3"
         response = await client.audio.speech.create(
             model=model,
@@ -593,7 +686,7 @@ async def _openai_speech(text: str, voice: VoiceCapsuleResponse, output_dir: Pat
         if content is None and hasattr(response, "read"):
             content = response.read()
         if not isinstance(content, (bytes, bytearray)):
-            return None, "provider_error: OpenAI speech response did not contain audio bytes"
+            return None, "provider_error: OpenAI speech response did not contain audio bytes", {"credentialSource": credential_source, "model": model}
 
         output_dir.mkdir(parents=True, exist_ok=True)
         file_path = output_dir / f"{uuid4()}.{response_format}"
@@ -613,27 +706,107 @@ async def _openai_speech(text: str, voice: VoiceCapsuleResponse, output_dir: Pat
                 },
             )
         )
-        return asset, None
+        try:
+            await preserve_bytes(
+                bytes(content),
+                origin_kind="generated_audio",
+                source_filename=Path(str(asset.get("file_path") or file_path)).name,
+                mime_type=f"audio/{response_format}",
+                original_path=str(file_path),
+                audio_asset_id=str(asset["id"]),
+                provenance={
+                    "provider": "openai_speech",
+                    "credentialSource": credential_source,
+                    "model": model,
+                    "voice": provider_voice,
+                },
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to preserve generated audio evidence for {asset.get('id')}: {exc}")
+            await safe_record_event(
+                "audio_asset.evidence_failed",
+                status="failed",
+                subject_table="audio_asset",
+                subject_id=str(asset.get("id")),
+                payload={"error": str(exc), "provider": "openai_speech"},
+            )
+        return asset, None, {"credentialSource": credential_source, "model": model, "voice": provider_voice}
     except Exception as exc:
         logger.exception(exc)
-        return None, f"provider_error: {exc}"
+        return None, f"provider_error: {exc}", {"credentialSource": credential_source}
+
+
+async def _segment_records_for_render(manifest: ReadingManifestResponse, request: RenderManifestRequest) -> List[Dict[str, Any]]:
+    if request.segmentIds:
+        return [await _segment_record(segment_id) for segment_id in request.segmentIds]
+
+    limit = max(1, min(int(request.maxSegments or 8), 50))
+    return await repo_query(
+        f"SELECT * FROM manuscript_segment WHERE manuscript = $id ORDER BY order_index ASC LIMIT {limit}",
+        {"id": ensure_record_id(manifest.manuscriptId)},
+    )
+
+
+async def accepted_render_segment_ids(manifest_id: str, request: RenderManifestRequest) -> List[str]:
+    manifest = await get_reading_manifest(manifest_id)
+    records = await _segment_records_for_render(manifest, request)
+    return [str(record["id"]) for record in records]
+
+
+async def _validate_render_prerequisites(
+    manifest: ReadingManifestResponse,
+    segments: List[ManuscriptSegmentResponse],
+    request: RenderManifestRequest,
+) -> None:
+    if manifest.status != "locked":
+        raise HTTPException(status_code=409, detail="Render blocked: lock the reading manifest before generating performance takes.")
+    if not segments:
+        raise HTTPException(status_code=400, detail="Render blocked: no manuscript segments were selected.")
+
+    provider_status = await get_voice_provider_status()
+    if provider_status.get("status") != "configured":
+        raise HTTPException(
+            status_code=503,
+            detail=provider_status.get("blockingReason") or "OpenAI speech provider is not configured.",
+        )
+
+    for segment in segments:
+        voice = await _voice_for_segment(manifest, segment)
+        if not voice:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Render blocked: no narrator or character voice resolved for segment {segment.id}.",
+            )
+        if voice.status != "locked":
+            raise HTTPException(status_code=409, detail=f"Render blocked: voice capsule {voice.id} is not locked.")
+        if voice.rightsStatus in RIGHTS_BLOCKERS:
+            raise HTTPException(status_code=409, detail=f"Render blocked: voice capsule {voice.id} has rights status '{voice.rightsStatus}'.")
+        provider = request.forceProvider or voice.provider
+        if provider not in SUPPORTED_TTS_PROVIDERS:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Render blocked: provider '{provider}' has no bundled V1 adapter.",
+            )
+
+
+async def validate_render_request(manifest_id: str, request: RenderManifestRequest) -> List[str]:
+    manifest = await get_reading_manifest(manifest_id)
+    segment_records = await _segment_records_for_render(manifest, request)
+    segments = [_segment_response(record) for record in segment_records]
+    await _validate_render_prerequisites(manifest, segments, request)
+    return [segment.id for segment in segments]
 
 
 async def render_reading_manifest(manifest_id: str, request: RenderManifestRequest) -> RenderManifestResponse:
     manifest = await get_reading_manifest(manifest_id)
-    if request.segmentIds:
-        segment_records = [await _segment_record(segment_id) for segment_id in request.segmentIds]
-    else:
-        segment_records = await repo_query(
-            "SELECT * FROM manuscript_segment WHERE manuscript = $id ORDER BY order_index ASC LIMIT 20",
-            {"id": ensure_record_id(manifest.manuscriptId)},
-        )
+    segment_records = await _segment_records_for_render(manifest, request)
+    segments = [_segment_response(record) for record in segment_records]
+    await _validate_render_prerequisites(manifest, segments, request)
 
     warnings: List[str] = []
     takes: List[PerformanceTakeResponse] = []
     output_dir = Path(UPLOADS_FOLDER) / "voice_layer" / str(uuid4())
-    for segment_record in segment_records:
-        segment = _segment_response(segment_record)
+    for segment in segments:
         voice = await _voice_for_segment(manifest, segment)
         provider = request.forceProvider or (voice.provider if voice else "none")
         model = voice.model if voice else None
@@ -641,6 +814,12 @@ async def render_reading_manifest(manifest_id: str, request: RenderManifestReque
         error_message = None
         qa_status = "not_run"
         take_status = "draft"
+        generation_settings: Dict[str, Any] = {
+            "adapter": provider,
+            "manifestVersionPolicy": "new manifest required for locked setting changes",
+            "renderMode": request.renderMode,
+            "maxSegments": request.maxSegments,
+        }
 
         if not voice:
             error_message = "voice_not_assigned: no narrator or character voice resolved for segment"
@@ -653,7 +832,9 @@ async def render_reading_manifest(manifest_id: str, request: RenderManifestReque
             take_status = "needs_review"
             warnings.append(error_message)
         else:
-            audio_asset, error_message = await _openai_speech(segment.text, voice, output_dir)
+            audio_asset, error_message, provider_facts = await _openai_speech(segment.text, voice, output_dir)
+            generation_settings.update(provider_facts)
+            model = provider_facts.get("model") or model
             if error_message:
                 qa_status = "provider_missing" if error_message.startswith("provider_not_configured") else "failed"
                 take_status = "needs_review"
@@ -669,10 +850,7 @@ async def render_reading_manifest(manifest_id: str, request: RenderManifestReque
                     "audio_asset": ensure_record_id(str(audio_asset["id"])) if audio_asset else None,
                     "provider": provider,
                     "model": model,
-                    "generation_settings": {
-                        "adapter": provider,
-                        "manifestVersionPolicy": "new manifest required for locked setting changes",
-                    },
+                    "generation_settings": generation_settings,
                     "emotion_direction": manifest.performanceRules,
                     "status": take_status,
                     "qa_status": qa_status,
@@ -693,6 +871,30 @@ async def render_reading_manifest(manifest_id: str, request: RenderManifestReque
     return RenderManifestResponse(manifest=_manifest_response(manifest_row), takes=takes, warnings=warnings)
 
 
+async def regenerate_performance_take(take_id: str, force_provider: Optional[str] = None) -> RenderManifestResponse:
+    take = await get_performance_take(take_id)
+    if take.status == "canon":
+        raise HTTPException(status_code=409, detail="Canon performance takes cannot be regenerated. Create a new manifest version.")
+    if force_provider and take.provider != force_provider:
+        raise HTTPException(status_code=409, detail="Regenerate blocked: changing provider requires a new manifest version.")
+
+    result = await render_reading_manifest(
+        take.readingManifestId,
+        RenderManifestRequest(
+            segmentIds=[take.segmentId],
+            renderMode="selected",
+            maxSegments=1,
+            forceProvider=force_provider or take.provider,
+        ),
+    )
+    await repo_update(
+        "performance_take",
+        _full_id(take_id, "performance_take"),
+        {"status": "superseded", "notes": "Superseded by a regenerated take."},
+    )
+    return result
+
+
 async def list_performance_takes(manifest_id: Optional[str] = None) -> List[PerformanceTakeResponse]:
     if manifest_id:
         rows = await repo_query(
@@ -702,6 +904,16 @@ async def list_performance_takes(manifest_id: Optional[str] = None) -> List[Perf
     else:
         rows = await repo_query("SELECT * FROM performance_take ORDER BY updated DESC LIMIT 100")
     return [_take_response(row) for row in rows]
+
+
+async def get_performance_take(take_id: str) -> PerformanceTakeResponse:
+    rows = await repo_query(
+        "SELECT * FROM $id",
+        {"id": ensure_record_id(_full_id(take_id, "performance_take"))},
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Performance take not found")
+    return _take_response(rows[0])
 
 
 async def update_take_status(take_id: str, request: TakeStatusUpdate) -> PerformanceTakeResponse:
@@ -753,11 +965,45 @@ async def publish_reading_manifest(manifest_id: str) -> ReadingManifestResponse:
             source.full_text = context_card
             source.title = f"Reading Manifest: {manifest.title}"
             await source.save()
+            try:
+                await create_derivative(
+                    derivative_type="context_card",
+                    content=context_card,
+                    source_id=str(source.id),
+                    provenance={"manifestId": manifest.id, "source": "reading_manifest.publish"},
+                )
+            except Exception as exc:
+                logger.warning(f"Failed to create reading manifest evidence derivative for {manifest.id}: {exc}")
+                await safe_record_event(
+                    "reading_manifest.publish_evidence_failed",
+                    status="failed",
+                    source_id=str(source.id),
+                    subject_table="reading_manifest",
+                    subject_id=manifest.id,
+                    payload={"error": str(exc)},
+                )
     else:
         source = Source(title=f"Reading Manifest: {manifest.title}", topics=["voice layer", "reading manifest"], full_text=context_card)
         await source.save()
         for notebook_id in manifest.notebooks:
             await source.add_to_notebook(notebook_id)
+        try:
+            await create_derivative(
+                derivative_type="context_card",
+                content=context_card,
+                source_id=str(source.id),
+                provenance={"manifestId": manifest.id, "source": "reading_manifest.publish"},
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to create reading manifest evidence derivative for {manifest.id}: {exc}")
+            await safe_record_event(
+                "reading_manifest.publish_evidence_failed",
+                status="failed",
+                source_id=str(source.id),
+                subject_table="reading_manifest",
+                subject_id=manifest.id,
+                payload={"error": str(exc)},
+            )
         manifest_row = _single_row(
             await repo_update(
                 "reading_manifest",

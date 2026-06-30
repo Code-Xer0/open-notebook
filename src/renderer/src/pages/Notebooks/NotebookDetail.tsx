@@ -40,22 +40,22 @@ export function NotebookDetail() {
   }
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 4rem)', width: '100%', gap: '1.5rem', padding: '1rem', boxSizing: 'border-box' }}>
+    <div className="notebook-detail-layout">
       {/* Left Column: Notebook Content (Notes & Sources) */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1.5rem', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.5rem', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0 }}>
             <button onClick={() => navigate('/')} className="glass-card" style={{ padding: '0.5rem', cursor: 'pointer', display: 'flex', border: '1px solid var(--color-border)', background: 'var(--color-surface)', borderRadius: 'var(--radius-md)', color: 'var(--color-text)' }}>
               <ArrowLeft size={20} />
             </button>
-            <h1 className="title" style={{ margin: 0, fontSize: '1.8rem' }}>{notebook.name}</h1>
+            <h1 className="title" style={{ margin: 0, fontSize: '1.8rem', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{notebook.name}</h1>
           </div>
           <button title="Notebook settings are not wired yet" disabled className="glass-card" style={{ padding: '0.5rem', cursor: 'not-allowed', opacity: 0.5, display: 'flex', border: '1px solid var(--color-border)', background: 'var(--color-surface)', borderRadius: 'var(--radius-md)', color: 'var(--color-text)' }}>
             <Settings size={20} />
           </button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', flex: 1, minHeight: 0 }}>
+        <div className="notebook-detail-grid">
           {/* Notes Section */}
           <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%', overflow: 'hidden' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -87,8 +87,8 @@ export function NotebookDetail() {
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', paddingRight: '0.5rem' }}>
               {notebook.sources?.length > 0 ? notebook.sources.map((source: any, i: number) => (
                 <div key={i} className="glass-card" style={{ padding: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--color-surface-hover)' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                    <span style={{ fontWeight: 500 }}>{source.filename || `Source ${i+1}`}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
+                    <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{source.filename || `Source ${i+1}`}</span>
                   </div>
                 </div>
               )) : (
@@ -100,7 +100,7 @@ export function NotebookDetail() {
       </div>
 
       {/* Right Column: Chat Interface */}
-      <div style={{ width: '450px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+      <div className="notebook-detail-chat">
         <Chat />
       </div>
     </div>

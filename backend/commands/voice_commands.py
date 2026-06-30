@@ -9,6 +9,8 @@ from surreal_commands import command
 class RenderReadingManifestInput(BaseModel):
     manifest_id: str
     segment_ids: Optional[list[str]] = None
+    render_mode: str = "chapter"
+    max_segments: int = 8
     force_provider: Optional[str] = None
 
 
@@ -19,16 +21,28 @@ class RegeneratePerformanceTakeInput(BaseModel):
 
 
 @command("render_reading_manifest", app="open_notebook", retry={"enabled": False})
-def render_reading_manifest(_: RenderReadingManifestInput) -> dict[str, Any]:
-    raise RuntimeError(
-        "Voice rendering command worker is not implemented in this local build. "
-        "Use the synchronous reading-manifest render endpoint or diagnostics before starting queued voice jobs."
+async def render_reading_manifest(input_data: RenderReadingManifestInput) -> dict[str, Any]:
+    from api.voice_models import RenderManifestRequest
+    from api.voice_service import render_reading_manifest as render_manifest
+
+    result = await render_manifest(
+        input_data.manifest_id,
+        RenderManifestRequest(
+            segmentIds=input_data.segment_ids,
+            renderMode=input_data.render_mode,
+            maxSegments=input_data.max_segments,
+            forceProvider=input_data.force_provider,
+        ),
     )
+    return result.model_dump()
 
 
 @command("regenerate_performance_take", app="open_notebook", retry={"enabled": False})
-def regenerate_performance_take(_: RegeneratePerformanceTakeInput) -> dict[str, Any]:
-    raise RuntimeError(
-        "Performance take regeneration worker is not implemented in this local build. "
-        "Use diagnostics before starting queued voice jobs."
+async def regenerate_performance_take(input_data: RegeneratePerformanceTakeInput) -> dict[str, Any]:
+    from api.voice_service import regenerate_performance_take as regenerate_take
+
+    result = await regenerate_take(
+        input_data.take_id,
+        force_provider=input_data.force_provider,
     )
+    return result.model_dump()

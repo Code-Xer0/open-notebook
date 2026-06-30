@@ -15,9 +15,11 @@ from fastapi import (
 from fastapi.responses import FileResponse, Response
 from loguru import logger
 from pydantic import BaseModel
-from surreal_commands import execute_command_sync, submit_command
+from surreal_commands import submit_command
+from surreal_commands.core.service import command_service as surreal_command_service
 
 from api.command_service import CommandService
+from api.evidence_service import create_derivative, preserve_file, preserve_text_source, safe_record_event
 from api.models import (
     AssetModel,
     CreateSourceInsightRequest,
@@ -203,16 +205,198 @@ def _read_plain_text_upload(path: str) -> str:
         return upload_path.read_text(encoding="utf-8", errors="replace")
 
 
+def _source_evidence_fields(asset: Any = None, status: Optional[str] = None) -> dict[str, Any]:
+    if not asset:
+        return {"evidenceStatus": status or "not_verified"}
+    return {
+        "evidenceAssetId": getattr(asset, "id", None),
+        "sha256": getattr(asset, "sha256", None),
+        "evidenceStatus": getattr(asset, "status", None) or status or "stored",
+        "duplicateAssetIds": getattr(asset, "duplicateAssetIds", None) or [],
+    }
+
+
+async def _latest_source_evidence(source_id: str) -> dict[str, Any]:
+    try:
+        rows = await repo_query(
+            "SELECT id, sha256, status FROM file_asset WHERE source = $source ORDER BY created DESC LIMIT 1",
+            {"source": ensure_record_id(source_id)},
+        )
+        if not rows:
+            return {}
+        row = rows[0]
+        return {
+            "evidenceAssetId": str(row.get("id")) if row.get("id") else None,
+            "sha256": row.get("sha256"),
+            "evidenceStatus": row.get("status") or "stored",
+        }
+    except Exception as exc:
+        logger.debug(f"Failed to read source evidence for {source_id}: {exc}")
+        return {"evidenceStatus": "not_verified"}
+
+
+async def _record_text_source_evidence(
+    source: Source,
+    *,
+    title: str,
+    content: str,
+    origin_kind: str = "text_entry",
+    provenance: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    try:
+        asset = await preserve_text_source(
+            content,
+            title=title,
+            source_id=str(source.id),
+            origin_kind=origin_kind,
+            provenance=provenance,
+        )
+        return _source_evidence_fields(asset)
+    except Exception as exc:
+        logger.warning(f"Failed to preserve text source evidence for {source.id}: {exc}")
+        await safe_record_event(
+            "file_asset.failed",
+            status="failed",
+            source_id=str(source.id) if source.id else None,
+            subject_table="source",
+            subject_id=str(source.id) if source.id else None,
+            payload={"originKind": origin_kind, "error": str(exc)},
+        )
+        return {"evidenceStatus": "failed"}
+
+
+async def _record_file_source_evidence(
+    source: Source,
+    *,
+    file_path: str,
+    origin_kind: str,
+    source_filename: Optional[str] = None,
+    full_text: Optional[str] = None,
+    provenance: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    try:
+        asset = await preserve_file(
+            file_path,
+            origin_kind=origin_kind,
+            source_filename=source_filename,
+            source_id=str(source.id),
+            provenance=provenance,
+        )
+        if full_text:
+            suffix = Path(file_path).suffix.lower()
+            derivative_type = "canonical_markdown" if suffix in {".md", ".markdown"} else "canonical_text"
+            await create_derivative(
+                derivative_type=derivative_type,
+                content=full_text,
+                asset_id=asset.id,
+                source_id=str(source.id),
+                provenance={"source": "source.full_text", "parser": provenance or {}},
+            )
+        return _source_evidence_fields(asset)
+    except Exception as exc:
+        logger.warning(f"Failed to preserve file source evidence for {source.id}: {exc}")
+        await safe_record_event(
+            "file_asset.failed",
+            status="failed",
+            source_id=str(source.id) if source.id else None,
+            subject_table="source",
+            subject_id=str(source.id) if source.id else None,
+            payload={"originKind": origin_kind, "filePath": file_path, "error": str(exc)},
+        )
+        return {"evidenceStatus": "failed"}
+
+
+async def _execute_local_command_job(
+    command_id: str,
+    command_name: str,
+    command_args: dict[str, Any],
+) -> None:
+    """Execute a surreal-command row inside the API process.
+
+    The packaged app does not currently launch a separate command worker
+    sidecar. Running the registered command locally keeps command status rows
+    factual without waiting on a nonexistent external worker.
+    """
+    try:
+        await surreal_command_service.execute_command(
+            str(command_id),
+            command_name,
+            command_args,
+        )
+        if command_name == "open_notebook.process_source":
+            await _finalize_process_source_command(command_id, command_args)
+    except Exception as exc:
+        logger.error(f"Local command execution failed for {command_id}: {exc}")
+        try:
+            await surreal_command_service.update_command_result(
+                str(command_id),
+                "failed",
+                {},
+                str(exc),
+            )
+        except Exception:
+            pass
+        raise
+
+
+async def _finalize_process_source_command(
+    command_id: str,
+    command_args: dict[str, Any],
+) -> None:
+    source_id = command_args.get("source_id")
+    if not source_id:
+        return
+
+    source = await Source.get(str(source_id))
+    if not source or not source.full_text:
+        return
+
+    try:
+        command_status = await CommandService.get_command_status(str(command_id))
+    except Exception:
+        command_status = {"status": "unknown"}
+
+    if command_status.get("status") not in {"completed", "failed", "canceled"}:
+        await surreal_command_service.update_command_result(
+            str(command_id),
+            "completed",
+            {
+                "status": "stored",
+                "source_id": str(source_id),
+                "title": source.title,
+                "full_text_chars": len(source.full_text or ""),
+                "embedding": "not_requested",
+            },
+        )
+
+
+def _schedule_local_command_job(
+    command_id: str,
+    command_name: str,
+    command_args: dict[str, Any],
+) -> None:
+    task = asyncio.create_task(
+        _execute_local_command_job(command_id, command_name, command_args)
+    )
+    task.add_done_callback(
+        lambda completed: logger.error(
+            f"Local command task crashed for {command_id}: {completed.exception()}"
+        )
+        if completed.exception()
+        else None
+    )
+
+
 @router.get("/sources/status")
 async def get_global_sources_status():
     """Get global status of all sources for telemetry."""
     try:
-        from api.command_registry import command_registry_status
+        from api.command_registry import command_registry_status_async
         from open_notebook.database.repository import repo_query
         # Basic aggregate counts
         sources_res = await repo_query("SELECT id FROM source")
         connected = len(sources_res) if sources_res else 0
-        workers = command_registry_status().get("workerAvailability", {})
+        workers = (await command_registry_status_async()).get("workerAvailability", {})
         return {
             "status": "reachable",
             "connected": connected,
@@ -326,6 +510,7 @@ async def get_sources(
                 command_id = str(command)
                 status = "unknown"
 
+            evidence_fields = await _latest_source_evidence(str(row["id"]))
             response_list.append(
                 SourceListResponse(
                     id=row["id"],
@@ -348,6 +533,7 @@ async def get_sources(
                     command_id=command_id,
                     status=status,
                     processing_info=processing_info,
+                    **evidence_fields,
                 )
             )
 
@@ -438,7 +624,7 @@ async def create_source(
                     status_code=404, detail=f"Transformation {trans_id} not found"
                 )
 
-        if source_data.type == "text" and not source_data.embed and not transformation_ids:
+        if source_data.type == "text" and not transformation_ids:
             source = Source(
                 title=source_data.title or "Text source",
                 topics=[],
@@ -448,6 +634,14 @@ async def create_source(
 
             for notebook_id in source_data.notebooks or []:
                 await source.add_to_notebook(notebook_id)
+
+            evidence_fields = await _record_text_source_evidence(
+                source,
+                title=source.title or source_data.title or "Text source",
+                content=source.full_text or source_data.content,
+                origin_kind="text_entry",
+                provenance={"sourceType": "text", "parser": "plain_text"},
+            )
 
             return SourceResponse(
                 id=source.id or "",
@@ -459,11 +653,20 @@ async def create_source(
                 embedded_chunks=0,
                 created=str(source.created),
                 updated=str(source.updated),
+                status="stored",
+                processing_info={
+                    "async": False,
+                    "stored": True,
+                    "parser": "plain_text",
+                    "embedding": "blocked_worker_unavailable"
+                    if source_data.embed
+                    else "not_requested",
+                },
+                **evidence_fields,
             )
 
         if (
             source_data.type == "upload"
-            and not source_data.embed
             and not transformation_ids
             and _is_plain_text_upload(file_path or source_data.file_path)
         ):
@@ -478,16 +681,26 @@ async def create_source(
                 or (upload_file.filename if upload_file and upload_file.filename else None)
                 or Path(final_file_path).name
             )
+            full_text = _read_plain_text_upload(final_file_path)
             source = Source(
                 title=source_title,
                 topics=[],
                 asset=Asset(file_path=final_file_path),
-                full_text=_read_plain_text_upload(final_file_path),
+                full_text=full_text,
             )
             await source.save()
 
             for notebook_id in source_data.notebooks or []:
                 await source.add_to_notebook(notebook_id)
+
+            evidence_fields = await _record_file_source_evidence(
+                source,
+                file_path=final_file_path,
+                origin_kind="upload",
+                source_filename=source_title,
+                full_text=source.full_text,
+                provenance={"sourceType": "upload", "parser": "plain_text_upload"},
+            )
 
             return SourceResponse(
                 id=source.id or "",
@@ -504,8 +717,11 @@ async def create_source(
                     "async": False,
                     "stored": True,
                     "parser": "plain_text_upload",
-                    "embedding": "not_requested",
+                    "embedding": "blocked_worker_unavailable"
+                    if source_data.embed
+                    else "not_requested",
                 },
+                **evidence_fields,
             )
 
         # Branch based on processing mode
@@ -535,6 +751,33 @@ async def create_source(
             for notebook_id in source_data.notebooks or []:
                 await source.add_to_notebook(notebook_id)
 
+            evidence_fields: dict[str, Any] = {"evidenceStatus": "not_verified"}
+            if source_data.type == "upload" and source_asset and source_asset.file_path:
+                evidence_fields = await _record_file_source_evidence(
+                    source,
+                    file_path=source_asset.file_path,
+                    origin_kind="upload",
+                    source_filename=source_title,
+                    provenance={"sourceType": "upload", "processing": "queued"},
+                )
+            elif source_data.type == "text" and source_data.content:
+                evidence_fields = await _record_text_source_evidence(
+                    source,
+                    title=source_title,
+                    content=source_data.content,
+                    origin_kind="text_entry",
+                    provenance={"sourceType": "text", "processing": "queued"},
+                )
+            elif source_data.type == "link":
+                await safe_record_event(
+                    "source.link.submitted",
+                    status="not_verified",
+                    source_id=str(source.id),
+                    subject_table="source",
+                    subject_id=str(source.id),
+                    payload={"url": source_data.url, "processing": "queued"},
+                )
+
             try:
                 # Import command modules to ensure they're registered
                 import commands.source_commands  # noqa: F401
@@ -560,21 +803,39 @@ async def create_source(
                 # command_id already includes 'command:' prefix
                 source.command = ensure_record_id(command_id)
                 await source.save()
+                _schedule_local_command_job(
+                    command_id,
+                    "open_notebook.process_source",
+                    command_input.model_dump(),
+                )
 
                 # Return source with command info
                 return SourceResponse(
                     id=source.id or "",
                     title=source.title,
                     topics=source.topics or [],
-                    asset=None,  # Will be populated after processing
+                    asset=AssetModel(
+                        file_path=source_asset.file_path if source_asset else None,
+                        url=source_asset.url if source_asset else None,
+                    )
+                    if source_asset
+                    else None,
                     full_text=None,  # Will be populated after processing
                     embedded=False,  # Will be updated after processing
                     embedded_chunks=0,
                     created=str(source.created),
                     updated=str(source.updated),
                     command_id=command_id,
-                    status="new",
-                    processing_info={"async": True, "queued": True},
+                    status="queued",
+                    processing_info={
+                        "async": True,
+                        "queued": True,
+                        "worker": "local_api_task",
+                        "embedding": "blocked_worker_unavailable"
+                        if source_data.embed
+                        else "not_requested",
+                    },
+                    **evidence_fields,
                 )
 
             except Exception as e:
@@ -615,7 +876,7 @@ async def create_source(
                 for notebook_id in source_data.notebooks or []:
                     await source.add_to_notebook(notebook_id)
 
-                # Execute command synchronously
+                # Execute command synchronously inside this API process.
                 command_input = SourceProcessingInput(
                     source_id=str(source.id),
                     content_state=content_state,
@@ -624,19 +885,23 @@ async def create_source(
                     embed=source_data.embed,
                 )
 
-                # Run in thread pool to avoid blocking the event loop
-                # execute_command_sync uses asyncio.run() internally which can't
-                # be called from an already-running event loop (FastAPI)
-                result = await asyncio.to_thread(
-                    execute_command_sync,
-                    "open_notebook",  # app name
-                    "process_source",  # command name
+                command_id = await CommandService.submit_command_job(
+                    "open_notebook",
+                    "process_source",
                     command_input.model_dump(),
-                    timeout=300,  # 5 minute timeout for sync processing
+                )
+                source.command = ensure_record_id(command_id)
+                await source.save()
+                await _execute_local_command_job(
+                    command_id,
+                    "open_notebook.process_source",
+                    command_input.model_dump(),
                 )
 
-                if not result.is_success():
-                    logger.error(f"Sync processing failed: {result.error_message}")
+                command_status = await CommandService.get_command_status(command_id)
+                if command_status.get("status") == "failed":
+                    error_message = command_status.get("error_message") or "Unknown processing error"
+                    logger.error(f"Sync processing failed: {error_message}")
                     # Clean up source record
                     try:
                         await source.delete()
@@ -650,7 +915,7 @@ async def create_source(
                             pass
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Processing failed: {result.error_message}",
+                        detail=f"Processing failed: {error_message}",
                     )
 
                 # Get the processed source
@@ -660,6 +925,34 @@ async def create_source(
                 if not processed_source:
                     raise HTTPException(
                         status_code=500, detail="Processed source not found"
+                    )
+
+                evidence_fields = {"evidenceStatus": "not_verified"}
+                if processed_source.asset and processed_source.asset.file_path:
+                    evidence_fields = await _record_file_source_evidence(
+                        processed_source,
+                        file_path=processed_source.asset.file_path,
+                        origin_kind="upload",
+                        source_filename=processed_source.title,
+                        full_text=processed_source.full_text,
+                        provenance={"sourceType": "upload", "processing": "sync"},
+                    )
+                elif source_data.type == "text" and processed_source.full_text:
+                    evidence_fields = await _record_text_source_evidence(
+                        processed_source,
+                        title=processed_source.title or source_data.title or "Text source",
+                        content=processed_source.full_text,
+                        origin_kind="text_entry",
+                        provenance={"sourceType": "text", "processing": "sync"},
+                    )
+                elif source_data.type == "link":
+                    await safe_record_event(
+                        "source.link.processed",
+                        status="stored",
+                        source_id=str(processed_source.id),
+                        subject_table="source",
+                        subject_id=str(processed_source.id),
+                        payload={"url": source_data.url, "processing": "sync"},
                     )
 
                 embedded_chunks = await processed_source.get_embedded_chunks()
@@ -682,7 +975,18 @@ async def create_source(
                     embedded_chunks=embedded_chunks,
                     created=str(processed_source.created),
                     updated=str(processed_source.updated),
-                    # No command_id or status for sync processing (legacy behavior)
+                    command_id=command_id,
+                    status="stored",
+                    processing_info={
+                        "async": False,
+                        "stored": True,
+                        "worker": "local_api_process",
+                        "command_status": command_status.get("status"),
+                        "embedding": "blocked_worker_unavailable"
+                        if source_data.embed
+                        else "not_requested",
+                    },
+                    **evidence_fields,
                 )
 
             except Exception as e:
@@ -798,6 +1102,7 @@ async def get_source(source_id: str):
         notebook_ids = (
             [str(nb_id) for nb_id in notebooks_query] if notebooks_query else []
         )
+        evidence_fields = await _latest_source_evidence(source.id or source_id)
 
         return SourceResponse(
             id=source.id or "",
@@ -821,6 +1126,7 @@ async def get_source(source_id: str):
             processing_info=processing_info,
             # Notebook associations
             notebooks=notebook_ids,
+            **evidence_fields,
         )
     except HTTPException:
         raise
@@ -988,9 +1294,13 @@ async def retry_source_processing(source_id: str):
                 # Continue with retry if we can't check status
 
         # Get notebooks that this source belongs to
-        query = "SELECT notebook FROM reference WHERE source = $source_id"
-        references = await repo_query(query, {"source_id": source_id})
-        notebook_ids = [str(ref["notebook"]) for ref in references]
+        query = "SELECT VALUE out FROM reference WHERE in = $source_id"
+        notebook_ids = [
+            str(notebook_id)
+            for notebook_id in await repo_query(
+                query, {"source_id": ensure_record_id(source_id)}
+            )
+        ]
 
         if not notebook_ids:
             raise HTTPException(
@@ -1030,7 +1340,7 @@ async def retry_source_processing(source_id: str):
                 content_state=content_state,
                 notebook_ids=notebook_ids,
                 transformations=[],  # Use default transformations on retry
-                embed=True,  # Always embed on retry
+                embed=False,
             )
 
             command_id = await CommandService.submit_command_job(
@@ -1044,8 +1354,13 @@ async def retry_source_processing(source_id: str):
             )
 
             # Update source with new command ID
-            source.command = ensure_record_id(f"command:{command_id}")
+            source.command = ensure_record_id(command_id)
             await source.save()
+            _schedule_local_command_job(
+                command_id,
+                "open_notebook.process_source",
+                command_input.model_dump(),
+            )
 
             # Get current embedded chunks count
             embedded_chunks = await source.get_embedded_chunks()
@@ -1068,7 +1383,12 @@ async def retry_source_processing(source_id: str):
                 updated=str(source.updated),
                 command_id=command_id,
                 status="queued",
-                processing_info={"retry": True, "queued": True},
+                processing_info={
+                    "retry": True,
+                    "queued": True,
+                    "worker": "local_api_task",
+                    "embedding": "blocked_worker_unavailable",
+                },
             )
 
         except Exception as e:
@@ -1159,17 +1479,23 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
         if not transformation:
             raise HTTPException(status_code=404, detail="Transformation not found")
 
-        # Submit transformation as background job (fire-and-forget)
+        # Submit transformation as background job and execute it in-process.
+        command_args = {
+            "source_id": source_id,
+            "transformation_id": request.transformation_id,
+        }
         command_id = submit_command(
             "open_notebook",
             "run_transformation",
-            {
-                "source_id": source_id,
-                "transformation_id": request.transformation_id,
-            },
+            command_args,
         )
         logger.info(
             f"Submitted run_transformation command {command_id} for source {source_id}"
+        )
+        _schedule_local_command_job(
+            str(command_id),
+            "open_notebook.run_transformation",
+            command_args,
         )
 
         # Return immediately with command_id for status tracking

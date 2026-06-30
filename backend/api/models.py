@@ -347,6 +347,11 @@ class SourceResponse(BaseModel):
     processing_info: Optional[Dict] = None
     # Notebook associations
     notebooks: Optional[List[str]] = None
+    # Evidence spine fields
+    evidenceAssetId: Optional[str] = None
+    sha256: Optional[str] = None
+    evidenceStatus: Optional[str] = None
+    duplicateAssetIds: Optional[List[str]] = None
 
 
 class SourceListResponse(BaseModel):
@@ -364,6 +369,9 @@ class SourceListResponse(BaseModel):
     command_id: Optional[str] = None
     status: Optional[str] = None
     processing_info: Optional[Dict[str, Any]] = None
+    evidenceAssetId: Optional[str] = None
+    sha256: Optional[str] = None
+    evidenceStatus: Optional[str] = None
 
 
 # Context API models
@@ -515,6 +523,30 @@ class ApiKeyStatusResponse(BaseModel):
         ...,
         description="Map of provider name to configuration source (database, environment, or none)",
     )
+    present: Dict[str, bool] = Field(
+        default_factory=dict,
+        description="Map of provider name to whether a credential or env fallback is present",
+    )
+    tested: Dict[str, bool] = Field(
+        default_factory=dict,
+        description="Map of provider name to whether a credential has a persisted test result",
+    )
+    usable: Dict[str, bool] = Field(
+        default_factory=dict,
+        description="Map of provider name to whether the latest known provider test passed",
+    )
+    lastTested: Dict[str, Optional[str]] = Field(
+        default_factory=dict,
+        description="Map of provider name to latest credential test timestamp",
+    )
+    lastTestSuccess: Dict[str, Optional[bool]] = Field(
+        default_factory=dict,
+        description="Map of provider name to latest credential test result",
+    )
+    lastTestMessage: Dict[str, Optional[str]] = Field(
+        default_factory=dict,
+        description="Map of provider name to latest credential test message",
+    )
     encryption_configured: bool = Field(
         ...,
         description="Whether OPEN_NOTEBOOK_ENCRYPTION_KEY is set (required to store keys in database)",
@@ -621,6 +653,9 @@ class CredentialResponse(BaseModel):
     credentials_path: Optional[str] = None
     num_ctx: Optional[int] = None
     has_api_key: bool = False
+    last_tested: Optional[str] = None
+    last_test_success: Optional[bool] = None
+    last_test_message: Optional[str] = None
     created: str
     updated: str
     model_count: int = 0

@@ -20,8 +20,14 @@ export function SourcePipelineCard() {
   const hasRetrievalLatency = telemetry.retrievalHealth.latency !== 'Unknown';
   const sourceWorkerStatus = telemetry.ingestionHealth.sourceWorker?.status || 'unknown';
   const embeddingWorkerStatus = telemetry.ingestionHealth.embeddingWorker?.status || 'unknown';
-  const sourceWorkerUnavailable = sourceWorkerStatus === 'unavailable' || sourceWorkerStatus === 'missing';
-  const embeddingWorkerUnavailable = embeddingWorkerStatus === 'unavailable' || embeddingWorkerStatus === 'missing';
+  const sourceWorkerReady = sourceWorkerStatus === 'ready';
+  const embeddingWorkerReady = embeddingWorkerStatus === 'ready';
+  const sourceWorkerLabel = sourceWorkerReady
+    ? 'Probe passed'
+    : telemetry.ingestionHealth.sourceWorker?.lastProbeStatus || telemetry.ingestionHealth.sourceWorker?.blockingReason || sourceWorkerStatus;
+  const embeddingWorkerLabel = embeddingWorkerReady
+    ? 'Probe passed'
+    : telemetry.ingestionHealth.embeddingWorker?.lastProbeStatus || telemetry.ingestionHealth.embeddingWorker?.blockingReason || embeddingWorkerStatus;
 
   const stages: PipelineStage[] = [
     {
@@ -31,11 +37,11 @@ export function SourcePipelineCard() {
     },
     {
       id: 'parse', label: 'Parse', icon: <FileText size={16} />,
-      status: sourceWorkerUnavailable ? 'warning' : 'warning',
-      value: sourceWorkerUnavailable ? 'Worker unavailable' : 'Not verified'
+      status: sourceWorkerReady ? 'observed' : 'warning',
+      value: sourceWorkerLabel || 'Not verified'
     },
     { id: 'chunk', label: 'Chunk', icon: <Scissors size={16} />, status: 'warning', value: 'Not verified' },
-    { id: 'embed', label: 'Embed', icon: <Cpu size={16} />, status: 'warning', value: embeddingWorkerUnavailable ? 'Worker unavailable' : 'Not verified' },
+    { id: 'embed', label: 'Embed', icon: <Cpu size={16} />, status: embeddingWorkerReady ? 'observed' : 'warning', value: embeddingWorkerLabel || 'Not verified' },
     { id: 'index', label: 'Index', icon: <Network size={16} />, status: 'warning', value: 'Not verified' },
     { id: 'retrieve', label: 'DB latency', icon: <Search size={16} />, status: hasRetrievalLatency ? 'observed' : 'warning', value: hasRetrievalLatency ? telemetry.retrievalHealth.latency : 'Unknown' },
     { id: 'synthesize', label: 'Synthesize', icon: <PenTool size={16} />, status: 'warning', value: 'Not wired' }

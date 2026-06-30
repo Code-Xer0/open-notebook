@@ -208,9 +208,9 @@ See dedicated CLAUDE.md files for detailed guidance:
 
 ### Deploy to Production
 1. Review [CONFIGURATION.md](CONFIGURATION.md) for security settings
-2. Use `make docker-release` for multi-platform image
-3. Push to Docker Hub / GitHub Container Registry
-4. Deploy `docker compose --profile multi up`
+2. Build the packaged desktop backend artifact from source
+3. Bundle it with the Electron installer resources
+4. Verify the local sidecars without requiring container tooling
 5. Verify migrations via API logs
 
 ---

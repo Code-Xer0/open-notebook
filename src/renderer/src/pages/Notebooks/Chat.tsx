@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Bot, User, Sparkles, MoreVertical, Loader2 } from 'lucide-react';
+import { Send, Bot, User, Sparkles, MoreVertical, Loader2, BookOpen, Plus, Search } from 'lucide-react';
 import { api } from '../../services/api';
-import { useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import type { CredentialStatus } from '../../types/runtime';
 
 interface Message {
   id: string;
@@ -15,6 +16,28 @@ interface BackendChatMessage {
   content?: string;
 }
 
+interface ChatSetupState {
+  checking: boolean;
+  ready: boolean;
+  reason: string;
+  modelLabel?: string;
+}
+
+interface BackendModel {
+  id: string;
+  name: string;
+  provider: string;
+  type: string;
+  credential?: string | null;
+}
+
+interface NotebookSummary {
+  id?: string;
+  name?: string;
+  title?: string;
+  sources?: unknown[];
+}
+
 function getApiErrorMessage(error: any): string {
   const detail = error?.response?.data?.detail;
   if (typeof detail === 'string') return detail;
@@ -24,13 +47,23 @@ function getApiErrorMessage(error: any): string {
 
 export function Chat() {
   const { id: notebookId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([
     { id: '1', role: 'assistant', content: 'Ask a question about this notebook. Answers should be checked against cited source passages.' }
   ]);
   const [input, setInput] = useState('');
+  const [notebookSearch, setNotebookSearch] = useState('');
+  const [notebooks, setNotebooks] = useState<NotebookSummary[]>([]);
+  const [notebooksLoading, setNotebooksLoading] = useState(false);
+  const [notebooksError, setNotebooksError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [contextStatus, setContextStatus] = useState<string>('Select a notebook with sources before asking grounded questions.');
+  const [chatSetup, setChatSetup] = useState<ChatSetupState>({
+    checking: true,
+    ready: false,
+    reason: 'Checking backend provider and model setup.'
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -59,14 +92,117 @@ export function Chat() {
       }
     }
 
-    if (notebookId) {
-      void loadSession();
-    }
+    void loadSession();
 
     return () => {
       cancelled = true;
     };
   }, [notebookId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadNotebooks() {
+      if (notebookId) return;
+      setNotebooksLoading(true);
+      setNotebooksError(null);
+      try {
+        const data = await api.notebooks.list();
+        if (cancelled) return;
+        setNotebooks(Array.isArray(data) ? data : []);
+      } catch (error: any) {
+        if (!cancelled) {
+          setNotebooksError(getApiErrorMessage(error));
+        }
+      } finally {
+        if (!cancelled) setNotebooksLoading(false);
+      }
+    }
+
+    void loadNotebooks();
+    return () => {
+      cancelled = true;
+    };
+  }, [notebookId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadChatSetup() {
+      setChatSetup({
+        checking: true,
+        ready: false,
+        reason: 'Checking backend provider and model setup.'
+      });
+
+      try {
+        const [credentialStatus, defaults, models] = await Promise.all([
+          api.credentials.status(),
+          api.models.getDefaults(),
+          api.models.list()
+        ]) as [CredentialStatus, any, BackendModel[]];
+
+        if (cancelled) return;
+
+        const defaultChatModelId = defaults?.default_chat_model;
+        if (!defaultChatModelId) {
+          setChatSetup({
+            checking: false,
+            ready: false,
+            reason: 'Blocked: no backend default chat model is set.'
+          });
+          return;
+        }
+
+        const model = (Array.isArray(models) ? models : []).find(
+          (item: BackendModel) => item.id === defaultChatModelId
+        ) as BackendModel | undefined;
+        if (!model) {
+          setChatSetup({
+            checking: false,
+            ready: false,
+            reason: 'Blocked: the default chat model record could not be found.'
+          });
+          return;
+        }
+
+        const providerPresent = Boolean(credentialStatus?.present?.[model.provider] || credentialStatus?.configured?.[model.provider]);
+        const providerUsable = Boolean(credentialStatus?.usable?.[model.provider]);
+        if (!providerUsable) {
+          setChatSetup({
+            checking: false,
+            ready: false,
+            reason: providerPresent
+              ? `Blocked: ${model.provider} is present but has no passing backend credential test.`
+              : `Blocked: ${model.provider} credential is not configured in the backend.`,
+            modelLabel: `${model.provider}/${model.name}`
+          });
+          return;
+        }
+
+        setChatSetup({
+          checking: false,
+          ready: true,
+          reason: `Ready with tested backend default model ${model.provider}/${model.name}.`,
+          modelLabel: `${model.provider}/${model.name}`
+        });
+      } catch (error: any) {
+        if (!cancelled) {
+          setChatSetup({
+            checking: false,
+            ready: false,
+            reason: `Blocked: setup status unavailable - ${getApiErrorMessage(error)}`
+          });
+        }
+      }
+    }
+
+    void loadChatSetup();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const ensureSession = async (): Promise<string> => {
     if (!notebookId) {
@@ -84,8 +220,20 @@ export function Chat() {
     return session.id;
   };
 
+  const sendBlockedReason = !notebookId
+    ? 'Select a notebook before sending a grounded question.'
+    : chatSetup.ready
+      ? ''
+      : chatSetup.reason;
+
+  const canSend = Boolean(input.trim() && notebookId && !loading && chatSetup.ready);
+  const filteredNotebooks = notebooks.filter((notebook) => {
+    const label = notebook.name || notebook.title || 'Untitled notebook';
+    return label.toLowerCase().includes(notebookSearch.toLowerCase());
+  });
+
   const handleSend = async () => {
-    if (!input.trim() || loading || !notebookId) return;
+    if (!canSend) return;
     
     const userMessage = input;
     setInput('');
@@ -139,11 +287,28 @@ export function Chat() {
     }
   };
 
+  const handleCreateNotebook = async () => {
+    try {
+      setNotebooksLoading(true);
+      const notebook = await api.notebooks.create({ name: 'New Notebook' });
+      const id = notebook?.id;
+      if (id) {
+        navigate(`/chat/${encodeURIComponent(id)}`);
+        return;
+      }
+      const data = await api.notebooks.list();
+      setNotebooks(Array.isArray(data) ? data : []);
+    } catch (error: any) {
+      setNotebooksError(getApiErrorMessage(error));
+    } finally {
+      setNotebooksLoading(false);
+    }
+  };
+
   return (
-    <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 0, overflow: 'hidden' }}>
+    <div className="glass-card chat-shell">
       {/* Chat Header */}
-      <div style={{ 
-        padding: '1.25rem', 
+      <div className="chat-header" style={{
         borderBottom: '1px solid var(--color-border)',
         display: 'flex',
         alignItems: 'center',
@@ -172,8 +337,66 @@ export function Chat() {
       </div>
 
       {/* Chat Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-        {messages.map((msg) => (
+      <div className="chat-scroll">
+        {!notebookId ? (
+          <div className="chat-empty-state">
+            <div className="chat-empty-icon">
+              <BookOpen size={24} />
+            </div>
+            <div>
+              <h2>Choose a notebook to chat with</h2>
+              <p>Grounded chat needs a notebook so CODEX can build source context before sending anything to a model.</p>
+            </div>
+
+            <div className="chat-notebook-picker">
+              <label className="chat-search-box">
+                <Search size={16} />
+                <input
+                  value={notebookSearch}
+                  onChange={(event) => setNotebookSearch(event.target.value)}
+                  placeholder="Search notebooks..."
+                />
+              </label>
+              <div className="chat-notebook-list">
+                {notebooksLoading && (
+                  <div className="chat-picker-status">
+                    <Loader2 size={16} className="animate-spin" /> Loading notebooks...
+                  </div>
+                )}
+                {!notebooksLoading && notebooksError && (
+                  <div className="chat-picker-status error-text">{notebooksError}</div>
+                )}
+                {!notebooksLoading && !notebooksError && filteredNotebooks.map((notebook, index) => (
+                  <button
+                    key={notebook.id || index}
+                    className="chat-notebook-row"
+                    onClick={() => notebook.id && navigate(`/chat/${encodeURIComponent(notebook.id)}`)}
+                    disabled={!notebook.id}
+                  >
+                    <BookOpen size={16} />
+                    <span>{notebook.name || notebook.title || `Notebook ${index + 1}`}</span>
+                    <small>{notebook.sources?.length ?? 'Unknown'} sources</small>
+                  </button>
+                ))}
+                {!notebooksLoading && !notebooksError && filteredNotebooks.length === 0 && (
+                  <div className="chat-picker-status">No notebooks found.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="chat-empty-actions">
+              <button className="btn primary" onClick={() => navigate('/notebooks')}>
+                <BookOpen size={15} /> Open Library
+              </button>
+              <button className="btn" onClick={() => void handleCreateNotebook()}>
+                <Plus size={15} /> New Notebook
+              </button>
+              <button className="btn" onClick={() => navigate('/sources')}>
+                Add Sources
+              </button>
+            </div>
+          </div>
+        ) : messages.map((msg) => (
           <div key={msg.id} style={{ 
             display: 'flex', 
             gap: '1rem',
@@ -200,15 +423,17 @@ export function Chat() {
               borderTopRightRadius: msg.role === 'user' ? 0 : 'var(--radius-md)',
               borderTopLeftRadius: msg.role === 'assistant' ? 0 : 'var(--radius-md)',
               maxWidth: '80%',
+              minWidth: 0,
               lineHeight: 1.5,
               fontSize: '0.95rem',
-              whiteSpace: 'pre-wrap'
+              whiteSpace: 'pre-wrap',
+              overflowWrap: 'anywhere'
             }}>
               {msg.content}
             </div>
           </div>
         ))}
-        {loading && (
+        {notebookId && loading && (
           <div style={{ display: 'flex', gap: '1rem' }}>
             <div style={{ 
               width: '32px', height: '32px', borderRadius: '50%', background: 'var(--accent-veil)',
@@ -227,20 +452,23 @@ export function Chat() {
       </div>
 
       {/* Chat Input */}
-      <div style={{ padding: '1.25rem', borderTop: '1px solid var(--color-border)', background: 'var(--panel-subtle)' }}>
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+      {notebookId && (
+      <div className="chat-composer" style={{ borderTop: '1px solid var(--color-border)', background: 'var(--panel-subtle)' }}>
+        {!chatSetup.ready && (
+          <div style={{ marginBottom: '0.75rem', padding: '0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--signal-warning)', background: 'var(--warning-veil)', color: 'var(--color-text)', display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.82rem' }}>{chatSetup.checking ? 'Checking chat setup...' : `${chatSetup.reason} You can still draft a prompt; sending stays blocked until this passes.`}</span>
+            {!chatSetup.checking && <Link to="/settings" className="btn" style={{ textDecoration: 'none' }}>Open Settings</Link>}
+          </div>
+        )}
+        <div className="chat-input-frame" style={{
           background: 'var(--color-surface)', 
           border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-lg)',
-          padding: '0.5rem'
+          borderRadius: 'var(--radius-lg)'
         }}>
           <textarea 
             placeholder="Ask about your notebook..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            disabled={!notebookId}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -248,27 +476,21 @@ export function Chat() {
               }
             }}
             style={{
-              flex: 1,
               background: 'transparent',
               border: 'none',
               color: 'var(--color-text)',
-              resize: 'none',
-              padding: '0.5rem',
               outline: 'none',
-              minHeight: '24px',
-              height: '24px',
-              maxHeight: '120px',
               fontFamily: 'inherit',
-              fontSize: '0.95rem',
-              lineHeight: '24px'
+              fontSize: '0.95rem'
             }}
           />
           <button 
             onClick={handleSend}
-            disabled={!input.trim() || !notebookId || loading}
+            disabled={!canSend}
+            title={canSend ? 'Send grounded question' : sendBlockedReason}
             style={{ 
-              background: input.trim() && notebookId && !loading ? 'var(--color-primary)' : 'var(--color-surface-hover)',
-              color: input.trim() && notebookId && !loading ? 'var(--shell-bg)' : 'var(--color-text-muted)',
+              background: canSend ? 'var(--color-primary)' : 'var(--color-surface-hover)',
+              color: canSend ? 'var(--shell-bg)' : 'var(--color-text-muted)',
               border: 'none',
               borderRadius: '50%',
               width: '36px',
@@ -276,10 +498,9 @@ export function Chat() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              cursor: input.trim() && notebookId && !loading ? 'pointer' : 'not-allowed',
+              cursor: canSend ? 'pointer' : 'not-allowed',
               transition: 'var(--transition)',
-              flexShrink: 0,
-              marginLeft: '0.5rem'
+              flexShrink: 0
             }}
           >
             <Send size={16} style={{ marginLeft: '2px' }} />
@@ -289,6 +510,7 @@ export function Chat() {
           AI can make mistakes. Verify important information.
         </div>
       </div>
+      )}
     </div>
   );
 }

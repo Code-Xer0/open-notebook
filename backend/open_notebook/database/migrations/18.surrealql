@@ -1,0 +1,73 @@
+-- Migration 18: CODEX Evidence Spine V1
+-- Immutable asset facts, canonical derivatives, audit events, explicit intake roots,
+-- and manifest-only recovery snapshot markers.
+
+DEFINE TABLE IF NOT EXISTS file_asset SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS sha256 ON TABLE file_asset TYPE string;
+DEFINE FIELD IF NOT EXISTS byte_size ON TABLE file_asset TYPE int;
+DEFINE FIELD IF NOT EXISTS mime_type ON TABLE file_asset TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS storage_path ON TABLE file_asset TYPE string;
+DEFINE FIELD IF NOT EXISTS original_path ON TABLE file_asset TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS origin_kind ON TABLE file_asset TYPE string;
+DEFINE FIELD IF NOT EXISTS source_filename ON TABLE file_asset TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS status ON TABLE file_asset TYPE string;
+DEFINE FIELD IF NOT EXISTS source ON TABLE file_asset TYPE option<record<source>>;
+DEFINE FIELD IF NOT EXISTS image_capsule ON TABLE file_asset TYPE option<record<image_capsule>>;
+DEFINE FIELD IF NOT EXISTS audio_asset ON TABLE file_asset TYPE option<record<audio_asset>>;
+DEFINE FIELD IF NOT EXISTS duplicate_of ON TABLE file_asset TYPE option<record<file_asset>>;
+DEFINE FIELD IF NOT EXISTS provenance ON TABLE file_asset TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS created ON TABLE file_asset DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE file_asset DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_file_asset_sha256 ON TABLE file_asset FIELDS sha256;
+DEFINE INDEX IF NOT EXISTS idx_file_asset_source ON TABLE file_asset FIELDS source;
+DEFINE INDEX IF NOT EXISTS idx_file_asset_origin ON TABLE file_asset FIELDS origin_kind;
+
+DEFINE TABLE IF NOT EXISTS file_derivative SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS asset ON TABLE file_derivative TYPE option<record<file_asset>>;
+DEFINE FIELD IF NOT EXISTS source ON TABLE file_derivative TYPE option<record<source>>;
+DEFINE FIELD IF NOT EXISTS derivative_type ON TABLE file_derivative TYPE string;
+DEFINE FIELD IF NOT EXISTS status ON TABLE file_derivative TYPE string;
+DEFINE FIELD IF NOT EXISTS storage_path ON TABLE file_derivative TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS content ON TABLE file_derivative TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS sha256 ON TABLE file_derivative TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS byte_size ON TABLE file_derivative TYPE option<int>;
+DEFINE FIELD IF NOT EXISTS provenance ON TABLE file_derivative TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS created ON TABLE file_derivative DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE file_derivative DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_file_derivative_asset ON TABLE file_derivative FIELDS asset;
+DEFINE INDEX IF NOT EXISTS idx_file_derivative_source ON TABLE file_derivative FIELDS source;
+DEFINE INDEX IF NOT EXISTS idx_file_derivative_type ON TABLE file_derivative FIELDS derivative_type;
+
+DEFINE TABLE IF NOT EXISTS artifact_event SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS event_type ON TABLE artifact_event TYPE string;
+DEFINE FIELD IF NOT EXISTS status ON TABLE artifact_event TYPE string;
+DEFINE FIELD IF NOT EXISTS subject_table ON TABLE artifact_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS subject_id ON TABLE artifact_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS asset ON TABLE artifact_event TYPE option<record<file_asset>>;
+DEFINE FIELD IF NOT EXISTS source ON TABLE artifact_event TYPE option<record<source>>;
+DEFINE FIELD IF NOT EXISTS evidence ON TABLE artifact_event TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS payload ON TABLE artifact_event TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS created ON TABLE artifact_event DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE artifact_event DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_artifact_event_type ON TABLE artifact_event FIELDS event_type;
+DEFINE INDEX IF NOT EXISTS idx_artifact_event_source ON TABLE artifact_event FIELDS source;
+
+DEFINE TABLE IF NOT EXISTS intake_source SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS label ON TABLE intake_source TYPE string;
+DEFINE FIELD IF NOT EXISTS path ON TABLE intake_source TYPE string;
+DEFINE FIELD IF NOT EXISTS source_kind ON TABLE intake_source TYPE string;
+DEFINE FIELD IF NOT EXISTS enabled ON TABLE intake_source TYPE bool;
+DEFINE FIELD IF NOT EXISTS provenance ON TABLE intake_source TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS created ON TABLE intake_source DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE intake_source DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_intake_source_path ON TABLE intake_source FIELDS path;
+
+DEFINE TABLE IF NOT EXISTS evidence_snapshot SCHEMAFULL;
+DEFINE FIELD IF NOT EXISTS reason ON TABLE evidence_snapshot TYPE string;
+DEFINE FIELD IF NOT EXISTS status ON TABLE evidence_snapshot TYPE string;
+DEFINE FIELD IF NOT EXISTS manifest ON TABLE evidence_snapshot TYPE object FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS manifest_sha256 ON TABLE evidence_snapshot TYPE string;
+DEFINE FIELD IF NOT EXISTS restore_supported ON TABLE evidence_snapshot TYPE bool;
+DEFINE FIELD IF NOT EXISTS created ON TABLE evidence_snapshot DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE evidence_snapshot DEFAULT time::now() VALUE time::now();
+DEFINE INDEX IF NOT EXISTS idx_evidence_snapshot_created ON TABLE evidence_snapshot FIELDS created;

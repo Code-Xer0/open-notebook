@@ -211,7 +211,7 @@ No changes to authentication. The `credentials` router uses the same `PasswordAu
 **Auth Flow** (unchanged from `api/auth.py`):
 - `PasswordAuthMiddleware`: Global middleware checking `Authorization: Bearer {password}` header
 - Default password: `open-notebook-change-me` (set `OPEN_NOTEBOOK_PASSWORD` in production)
-- Docker secrets support via `OPEN_NOTEBOOK_PASSWORD_FILE`
+- File-backed secret support via `OPEN_NOTEBOOK_PASSWORD_FILE`
 
 ### Connection Testing (`open_notebook/ai/connection_tester.py`)
 

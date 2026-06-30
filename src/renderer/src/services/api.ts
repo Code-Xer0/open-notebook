@@ -105,12 +105,22 @@ export const api = {
   credentials: {
     status: () => apiClient.get('/credentials/status').then(res => res.data),
     list: (provider?: string) => apiClient.get('/credentials', { params: provider ? { provider } : undefined }).then(res => res.data),
+    create: (data: any) => apiClient.post('/credentials', data).then(res => res.data),
+    update: (id: string, data: any) => apiClient.put(`/credentials/${id}`, data).then(res => res.data),
     test: (id: string) => apiClient.post(`/credentials/${id}/test`).then(res => res.data),
+    discover: (id: string) => apiClient.post(`/credentials/${id}/discover`).then(res => res.data),
+    registerModels: (id: string, data: any) => apiClient.post(`/credentials/${id}/register-models`, data).then(res => res.data),
   },
 
   // Models
   models: {
     list: () => apiClient.get('/models').then(res => res.data),
+    create: (data: any) => apiClient.post('/models', data).then(res => res.data),
+    test: (id: string) => apiClient.post(`/models/${id}/test`).then(res => res.data),
+    getDefaults: () => apiClient.get('/models/defaults').then(res => res.data),
+    updateDefaults: (data: any) => apiClient.put('/models/defaults', data).then(res => res.data),
+    providers: () => apiClient.get('/models/providers').then(res => res.data),
+    autoAssign: () => apiClient.post('/models/auto-assign').then(res => res.data),
   },
 
   // Settings
@@ -124,6 +134,26 @@ export const api = {
     version: () => apiClient.get('/version').then(res => res.data),
     status: () => apiClient.get('/diagnostics').then(res => res.data),
     telemetrySummary: () => apiClient.get('/telemetry/summary').then(res => res.data),
+  },
+
+  // Evidence spine: immutable local asset facts, audit events, intake roots, and snapshot manifests.
+  evidence: {
+    assets: {
+      list: (params?: { limit?: number; offset?: number }) => apiClient.get('/evidence/assets', { params }).then(res => res.data),
+      get: (id: string) => apiClient.get(`/evidence/assets/${id}`).then(res => res.data),
+    },
+    events: {
+      list: (params?: { limit?: number; offset?: number }) => apiClient.get('/evidence/events', { params }).then(res => res.data),
+    },
+    snapshots: {
+      list: (params?: { limit?: number }) => apiClient.get('/evidence/snapshots', { params }).then(res => res.data),
+      create: (data: { reason: string }) => apiClient.post('/evidence/snapshots', data).then(res => res.data),
+    },
+    intakeSources: {
+      list: (params?: { limit?: number }) => apiClient.get('/evidence/intake-sources', { params }).then(res => res.data),
+      create: (data: { label: string; path: string; sourceKind?: string; enabled?: boolean; provenance?: Record<string, unknown> }) =>
+        apiClient.post('/evidence/intake-sources', data).then(res => res.data),
+    },
   },
 
   imageCapsules

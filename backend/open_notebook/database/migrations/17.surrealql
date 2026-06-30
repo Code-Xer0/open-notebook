@@ -1,0 +1,5 @@
+-- Migration 17: Persist provider credential test facts.
+
+DEFINE FIELD last_tested ON credential TYPE option<datetime>;
+DEFINE FIELD last_test_success ON credential TYPE option<bool>;
+DEFINE FIELD last_test_message ON credential TYPE option<string>;

@@ -48,6 +48,9 @@ class Credential(ObjectModel):
         "location",
         "credentials_path",
         "num_ctx",
+        "last_tested",
+        "last_test_success",
+        "last_test_message",
     }
 
     name: str
@@ -68,6 +71,9 @@ class Credential(ObjectModel):
     # Ollama-only: overrides the context window (num_ctx). Esperanto defaults to
     # 8192; raise this if your hardware can handle a larger context window.
     num_ctx: Optional[int] = None
+    last_tested: Optional[datetime] = None
+    last_test_success: Optional[bool] = None
+    last_test_message: Optional[str] = None
 
     def to_esperanto_config(self) -> Dict[str, Any]:
         """

@@ -19,7 +19,7 @@ const OFFLINE_TELEMETRY: TelemetryState = {
 let timer: ReturnType<typeof setInterval> | null = null;
 
 export async function pingBackendOnce(): Promise<void> {
-  const { backend, setBackend, setTelemetry } = useStore.getState();
+  const { backend, setBackend, setTelemetry, setDiagnostics } = useStore.getState();
   if (backend.status === 'unknown') setBackend({ status: 'connecting' });
 
   try {
@@ -27,10 +27,13 @@ export async function pingBackendOnce(): Promise<void> {
 
     let version: string | null = null;
     try {
-      const v = await api.diagnostics.version();
+      const diagnostics = await api.diagnostics.status();
+      setDiagnostics(diagnostics);
+      const v = diagnostics?.version;
       version = (v && typeof v.version === 'string') ? v.version : null;
     } catch {
-      /* version is best-effort; absence does not mean offline */
+      setDiagnostics(null);
+      /* diagnostics are best-effort; absence does not mean offline */
     }
     setBackend({ status: 'online', version, lastChecked: Date.now() });
 
@@ -45,6 +48,7 @@ export async function pingBackendOnce(): Promise<void> {
     }
   } catch {
     setBackend({ status: 'offline', version: null, lastChecked: Date.now() });
+    setDiagnostics(null);
     setTelemetry(OFFLINE_TELEMETRY);
   }
 }

@@ -30,7 +30,7 @@ class Notebook(ObjectModel):
         try:
             srcs = await repo_query(
                 """
-                select * omit source.full_text from (
+                select * from (
                 select in as source from reference where out=$id
                 fetch source
             ) order by source.updated desc
@@ -112,7 +112,7 @@ class Notebook(ObjectModel):
                 SELECT
                     id,
                     count(->reference[WHERE out != $notebook_id].out) as assigned_others
-                FROM (SELECT VALUE <-reference.in AS sources FROM $notebook_id)[0]
+                FROM (SELECT VALUE <-reference.in FROM $notebook_id)[0]
                 """,
                 {"notebook_id": notebook_id},
             )
@@ -177,7 +177,7 @@ class Notebook(ObjectModel):
                     SELECT
                         id,
                         count(->reference[WHERE out != $notebook_id].out) as assigned_others
-                    FROM (SELECT VALUE <-reference.in AS sources FROM $notebook_id)[0]
+                    FROM (SELECT VALUE <-reference.in FROM $notebook_id)[0]
                     """,
                     {"notebook_id": notebook_id},
                 )
@@ -371,7 +371,11 @@ class Source(ObjectModel):
                 full_text=self.full_text,
             )
         else:
-            return dict(id=self.id, title=self.title, insights=insights)
+            context = dict(id=self.id, title=self.title, insights=insights)
+            if self.full_text:
+                context["content_preview"] = self.full_text[:4000]
+                context["content_state"] = "stored"
+            return context
 
     async def get_embedded_chunks(self) -> int:
         try:

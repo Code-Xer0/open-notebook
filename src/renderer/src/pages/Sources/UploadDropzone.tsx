@@ -106,23 +106,24 @@ export function UploadDropzone({ onFilesSelected, maxFiles = 50, accept, helperT
           <h4 style={{ marginBottom: '1rem', fontSize: '1rem', fontWeight: 600 }}>
             Selected Files ({selectedFiles.length})
           </h4>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '200px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '240px', overflowY: 'auto', paddingRight: '0.5rem' }}>
             {selectedFiles.map((file, idx) => (
               <div key={`${file.name}-${idx}`} style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'space-between',
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) 32px',
+                alignItems: 'center',
+                gap: '0.75rem',
                 padding: '0.75rem',
                 background: 'var(--panel-subtle)',
                 borderRadius: 'var(--radius-md)',
                 border: '1px solid var(--color-border)'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', overflow: 'hidden' }}>
-                  <FileIcon size={18} color="var(--color-text-muted)" />
-                  <span style={{ fontSize: '0.875rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '18px minmax(0, 1fr) auto', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+                  <FileIcon size={18} color="var(--color-text-muted)" style={{ flexShrink: 0 }} />
+                  <span title={file.name} style={{ minWidth: 0, fontSize: '0.875rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {file.name}
                   </span>
-                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
                     {(file.size / 1024).toFixed(1)} KB
                   </span>
                 </div>
@@ -136,9 +137,12 @@ export function UploadDropzone({ onFilesSelected, maxFiles = 50, accept, helperT
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '0.25rem',
+                    width: '32px',
+                    height: '32px',
+                    padding: 0,
                     borderRadius: '50%'
                   }}
+                  title={`Remove ${file.name}`}
                 >
                   <X size={16} />
                 </button>
