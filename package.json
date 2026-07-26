@@ -1,6 +1,6 @@
 {
   "name": "electron-app",
-  "version": "1.0.21",
+  "version": "1.0.22",
   "description": "An Electron application with Vue and TypeScript",
   "main": "./out/main/index.js",
   "author": "example.com",
@@ -12,6 +12,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "audit:runtime": "node scripts/audit-runtime.cjs",
+    "smoke:operational": "node scripts/operational-smoke.cjs",
     "start": "electron-vite preview",
     "dev": "electron-vite dev",
     "build": "electron-vite build",

@@ -1,6 +1,11 @@
+import { realpathSync } from 'fs'
 import { resolve } from 'path'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+
+const projectRoot = realpathSync(process.cwd())
+const rendererRoot = resolve(projectRoot, 'src/renderer')
+const rendererSrc = resolve(rendererRoot, 'src')
 
 export default defineConfig({
   main: {
@@ -10,9 +15,10 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()]
   },
   renderer: {
+    root: rendererRoot,
     resolve: {
       alias: {
-        '@renderer': resolve('src/renderer/src')
+        '@renderer': rendererSrc
       }
     },
     plugins: [react()]
