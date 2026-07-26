@@ -1,5 +1,4 @@
 import hashlib
-import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +8,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 from loguru import logger
 
+from api.audio_adapters import get_audio_adapter_capabilities
 from api.evidence_service import create_derivative, preserve_bytes, safe_record_event
 from api.voice_models import (
     ManuscriptIntakeRequest,
@@ -186,24 +186,26 @@ def _take_response(record: Dict[str, Any]) -> PerformanceTakeResponse:
 
 async def get_voice_provider_status() -> Dict[str, Any]:
     """Return factual OpenAI speech readiness without performing generation."""
-    credential_source = "none"
-    has_credential = False
+    adapters = await get_audio_adapter_capabilities()
+    speech_adapter = adapters.get("openai_speech", {})
+    credential_source = speech_adapter.get("credentialSource", "none")
     credential_id = None
-    last_error = None
+    last_error = speech_adapter.get("lastTestMessage")
 
     try:
         credentials = await Credential.get_by_provider("openai")
-        credential = next((item for item in credentials if item.api_key), None)
+        credential = next(
+            (
+                item
+                for item in credentials
+                if item.api_key and item.last_test_success is True
+            ),
+            None,
+        )
         if credential:
-            has_credential = True
-            credential_source = "database"
             credential_id = credential.id
     except Exception as exc:
         last_error = f"credential_error: {exc}"
-
-    if not has_credential and os.getenv("OPENAI_API_KEY"):
-        has_credential = True
-        credential_source = "environment"
 
     default_tts_model = None
     default_tts_model_name = None
@@ -219,22 +221,26 @@ async def get_voice_provider_status() -> Dict[str, Any]:
         if not last_error:
             last_error = f"default_model_error: {exc}"
 
-    if not has_credential:
+    if speech_adapter.get("status") != "ready":
         return {
-            "status": "provider missing",
+            "status": speech_adapter.get("status") or "provider missing",
             "provider": "openai",
+            "adapter": "openai_speech",
             "source": credential_source,
             "credentialId": credential_id,
             "defaultTextToSpeechModel": default_tts_model,
             "defaultTextToSpeechModelName": default_tts_model_name,
             "defaultTextToSpeechModelProvider": default_tts_model_provider,
             "lastError": last_error,
-            "blockingReason": "OpenAI speech needs a backend OpenAI credential or OPENAI_API_KEY environment fallback.",
+            "blockingReason": speech_adapter.get("blockingReason")
+            or "OpenAI speech needs a passing backend credential test.",
+            "adapters": adapters,
         }
 
     return {
-        "status": "configured",
+        "status": "ready",
         "provider": "openai",
+        "adapter": "openai_speech",
         "source": credential_source,
         "credentialId": credential_id,
         "defaultTextToSpeechModel": default_tts_model,
@@ -242,17 +248,22 @@ async def get_voice_provider_status() -> Dict[str, Any]:
         "defaultTextToSpeechModelProvider": default_tts_model_provider,
         "lastError": last_error,
         "blockingReason": None,
+        "adapters": adapters,
     }
 
 
 async def _resolve_openai_api_key() -> Tuple[Optional[str], str]:
     credentials = await Credential.get_by_provider("openai")
-    credential = next((item for item in credentials if item.api_key), None)
+    credential = next(
+        (
+            item
+            for item in credentials
+            if item.api_key and item.last_test_success is True
+        ),
+        None,
+    )
     if credential and credential.api_key:
         return credential.api_key.get_secret_value(), "database"
-    env_key = os.getenv("OPENAI_API_KEY")
-    if env_key:
-        return env_key, "environment"
     return None, "none"
 
 
@@ -764,7 +775,7 @@ async def _validate_render_prerequisites(
         raise HTTPException(status_code=400, detail="Render blocked: no manuscript segments were selected.")
 
     provider_status = await get_voice_provider_status()
-    if provider_status.get("status") != "configured":
+    if provider_status.get("status") != "ready":
         raise HTTPException(
             status_code=503,
             detail=provider_status.get("blockingReason") or "OpenAI speech provider is not configured.",

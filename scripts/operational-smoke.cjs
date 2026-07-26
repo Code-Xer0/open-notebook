@@ -15,6 +15,7 @@ const apiPassword = 'open-notebook-change-me';
 const apiBase = 'http://127.0.0.1:5055/api';
 const healthUrl = 'http://127.0.0.1:5055/health';
 const runId = crypto.randomBytes(8).toString('hex');
+const packageVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf-8')).version;
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `codex-operational-smoke-${runId}-`));
 const runtimeDir = path.join(tempRoot, 'runtime');
 const surrealDir = path.join(tempRoot, 'surreal');
@@ -29,6 +30,7 @@ const proof = {
   backendMode,
   checks: [],
   startedAt: new Date().toISOString(),
+  packageVersion,
 };
 
 function record(name, status, details = {}) {
@@ -47,6 +49,37 @@ function responseItems(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
   if (Array.isArray(payload?.capsules)) return payload.capsules;
   return [];
+}
+
+function sha256File(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function minimalPdfBuffer(text) {
+  const safeText = String(text).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  const content = `BT /F1 12 Tf 72 720 Td (${safeText}) Tj ET`;
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    `5 0 obj\n<< /Length ${Buffer.byteLength(content, 'utf-8')} >>\nstream\n${content}\nendstream\nendobj\n`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(pdf, 'utf-8'));
+    pdf += object;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, 'utf-8');
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (const offset of offsets.slice(1)) {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, 'utf-8');
 }
 
 function wait(ms) {
@@ -159,8 +192,43 @@ async function startSidecars() {
   if (await isPortListening(8000)) throw new Error('Port 8000 is already listening; stop the existing sidecar first.');
   if (await isPortListening(5055)) throw new Error('Port 5055 is already listening; stop the existing backend first.');
 
+  if (backendMode === 'packaged') {
+    const packagedApp = path.join(root, 'dist', 'win-unpacked', 'electron-app.exe');
+    if (!fs.existsSync(packagedApp)) throw new Error(`Missing packaged app: ${packagedApp}`);
+    const userDataDir = path.join(tempRoot, 'electron-user-data');
+    fs.mkdirSync(userDataDir, { recursive: true });
+    const appProcess = spawnLogged(
+      'packaged-app',
+      packagedApp,
+      [`--user-data-dir=${userDataDir}`],
+      {
+        cwd: path.dirname(packagedApp),
+        env: {
+          ...process.env,
+          OPENAI_API_KEY: '',
+          ELEVENLABS_API_KEY: '',
+        },
+      },
+    );
+    proof.packagedAppPid = appProcess.pid;
+    proof.packagedAppPath = packagedApp;
+    proof.packagedUserDataDir = userDataDir;
+    if (!(await waitForPort(8000, 120_000))) {
+      fail('packaged surreal sidecar startup', new Error(`Packaged app did not open port 8000. See ${appProcess.__errPath}`));
+    }
+    record('packaged surreal sidecar startup', 'passed', { pid: appProcess.pid });
+    if (!(await waitForPort(5055, 360_000))) {
+      fail('packaged backend startup', new Error(`Packaged app did not open port 5055. See ${appProcess.__errPath}`));
+    }
+    record('packaged backend startup', 'passed');
+    return;
+  }
+
   const surrealExe = path.join(root, 'resources', 'bin', 'surreal.exe');
   if (!fs.existsSync(surrealExe)) throw new Error(`Missing SurrealDB binary: ${surrealExe}`);
+  proof.resourceHashes = {
+    surreal: sha256File(surrealExe),
+  };
   const surreal = spawnLogged(
     'surreal',
     surrealExe,
@@ -210,6 +278,7 @@ async function startSidecars() {
   if (backendMode === 'exe') {
     const backendExe = path.join(root, 'backend', 'dist', 'backend.exe');
     if (!fs.existsSync(backendExe)) throw new Error(`Missing backend executable: ${backendExe}`);
+    proof.resourceHashes.backend = sha256File(backendExe);
     const backend = spawnLogged('backend', backendExe, [], { cwd: tempRoot, env: backendEnv });
     proof.backendPid = backend.pid;
   } else {
@@ -240,10 +309,21 @@ async function smoke() {
   if (diagnostics?.capabilities?.evidenceVault?.status !== 'ready') {
     throw new Error(`Evidence vault is not ready: ${JSON.stringify(diagnostics?.capabilities?.evidenceVault)}`);
   }
+  if (diagnostics?.artifactWorkflows?.source_upload?.status !== 'ready') {
+    throw new Error(`Source artifact workflow is not ready: ${JSON.stringify(diagnostics?.artifactWorkflows?.source_upload)}`);
+  }
+  if (!diagnostics?.audioAdapters?.elevenlabs_speech) {
+    throw new Error(`ElevenLabs adapter contract is not present in diagnostics: ${JSON.stringify(diagnostics?.audioAdapters)}`);
+  }
+  if (diagnostics?.evidence?.evidenceRoot && !String(diagnostics.evidence.evidenceRoot).startsWith(runtimeDir) && backendMode !== 'packaged') {
+    throw new Error(`Evidence root escaped smoke runtime dir: ${diagnostics.evidence.evidenceRoot}`);
+  }
   record('diagnostics runtime/evidence facts', 'passed', {
     docker: diagnostics.runtimeDependencies.docker.status,
     evidence: diagnostics.capabilities.evidenceVault.status,
     evidenceRoot: diagnostics.evidence?.evidenceRoot,
+    sourceWorkflow: diagnostics.artifactWorkflows.source_upload.status,
+    elevenlabsSpeech: diagnostics.audioAdapters.elevenlabs_speech.status,
   });
 
   const notebook = (await requestJson('/notebooks', {
@@ -275,6 +355,55 @@ async function smoke() {
     throw new Error(`Duplicate source did not report duplicateAssetIds: ${JSON.stringify(duplicate)}`);
   }
   record('duplicate source hash hint', 'passed', { duplicateAssetIds: duplicate.duplicateAssetIds });
+
+  async function uploadSourceFile(filename, content, mimeType, asyncProcessing = false) {
+    const form = new FormData();
+    const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf-8');
+    form.append('file', new Blob([bytes], { type: mimeType }), filename);
+    form.append('type', 'upload');
+    form.append('embed', 'false');
+    form.append('delete_source', 'false');
+    form.append('async_processing', asyncProcessing ? 'true' : 'false');
+    form.append('notebooks', JSON.stringify([notebook.id]));
+    const uploaded = (await requestJson('/sources', { method: 'POST', body: form })).body;
+    if (!uploaded?.sha256 || !uploaded?.evidenceAssetId) {
+      throw new Error(`Uploaded ${filename} did not return evidence facts: ${JSON.stringify(uploaded)}`);
+    }
+    if (!asyncProcessing && uploaded.status !== 'stored') {
+      throw new Error(`Uploaded ${filename} should be stored immediately: ${JSON.stringify(uploaded)}`);
+    }
+    if (asyncProcessing && !['queued', 'stored'].includes(uploaded.status)) {
+      throw new Error(`Uploaded ${filename} should be queued or stored: ${JSON.stringify(uploaded)}`);
+    }
+    record(`multipart upload ${filename}`, 'passed', {
+      id: uploaded.id,
+      status: uploaded.status,
+      sha256: uploaded.sha256,
+    });
+    return uploaded;
+  }
+
+  await uploadSourceFile(
+    `operational-smoke-${runId}.md`,
+    `# Operational Smoke\n\nMarkdown upload for ${runId}.`,
+    'text/markdown',
+  );
+  await uploadSourceFile(
+    `operational-smoke-${runId}.txt`,
+    `Plain text upload for ${runId}.`,
+    'text/plain',
+  );
+  await uploadSourceFile(
+    `operational-smoke-${runId}.csv`,
+    `name,value\nrun,${runId}\nstatus,stored\n`,
+    'text/csv',
+  );
+  await uploadSourceFile(
+    `operational-smoke-${runId}.pdf`,
+    minimalPdfBuffer(`Operational smoke PDF upload for ${runId}.`),
+    'application/pdf',
+    true,
+  );
 
   const context = (await requestJson('/chat/context', {
     method: 'POST',

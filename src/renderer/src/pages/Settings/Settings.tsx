@@ -712,6 +712,8 @@ export function Settings() {
               <div className="diagnostic-row"><span>Evidence assets</span><strong>{diagnostics?.evidence?.assetCount ?? 'Unknown'}</strong></div>
               <div className="diagnostic-row"><span>Snapshot manifests</span><strong>{diagnostics?.evidence?.snapshotCount ?? 'Unknown'} · restore unsupported</strong></div>
               <div className="diagnostic-row"><span>Latest snapshot</span><strong title={diagnostics?.evidence?.latestSnapshot?.manifestSha256}>{diagnostics?.evidence?.latestSnapshot?.reason || 'None recorded'}</strong></div>
+              <div className="diagnostic-row"><span>Artifact workflows</span><strong>{Object.values(diagnostics?.artifactWorkflows || {}).filter((fact) => fact.status === 'ready').length} ready / {Object.keys(diagnostics?.artifactWorkflows || {}).length || 'Unknown'} total</strong></div>
+              <div className="diagnostic-row"><span>Audio adapters</span><strong>{Object.entries(diagnostics?.audioAdapters || {}).map(([id, fact]) => `${id}:${fact.status}`).join(' / ') || 'Not verified'}</strong></div>
               <div className="diagnostic-row"><span>SurrealDB</span><strong>{sidecars?.surreal.phase || 'Unknown'} {sidecars?.surreal.pid ? `pid ${sidecars.surreal.pid}` : ''}</strong></div>
               <div className="diagnostic-row"><span>Python API</span><strong>{sidecars?.backend.phase || 'Unknown'} {sidecars?.backend.pid ? `pid ${sidecars.backend.pid}` : ''}</strong></div>
               <div className="diagnostic-row"><span>Port owners</span><strong>{sidecars?.ports.length ? sidecars.ports.map((port) => `${port.port}:${port.pid || 'none'}${port.staleExternal ? ' stale' : port.ownedByCodex ? ' owned' : ''}`).join(' / ') : 'Unknown'}</strong></div>

@@ -310,16 +310,16 @@ async def command_registry_status_async() -> dict[str, Any]:
             )
             return status
 
-        if provider_status.get("status") != "configured":
+        if provider_status.get("status") != "ready":
             workers["voice"] = {
                 **_worker_fact(
-                    "provider missing",
+                    provider_status.get("status") or "provider missing",
                     COMMAND_WORKERS["voice"],
-                    reason=provider_status.get("blockingReason") or "OpenAI speech provider is not configured.",
-                    last_probe_status="provider_missing",
+                    reason=provider_status.get("blockingReason") or "OpenAI speech provider is not ready.",
+                    last_probe_status=provider_status.get("status") or "provider_missing",
                     last_probe_at=_utc_now(),
                     last_error=provider_status.get("lastError"),
-                    blocking_reason=provider_status.get("blockingReason") or "OpenAI speech provider is not configured.",
+                    blocking_reason=provider_status.get("blockingReason") or "OpenAI speech provider is not ready.",
                 ),
                 "provider": provider_status,
             }

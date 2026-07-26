@@ -43,6 +43,16 @@ export interface RuntimeDiagnostics {
   capabilities?: Record<string, CapabilityFact>;
   workers?: Record<string, CapabilityFact & Record<string, unknown>>;
   version?: Record<string, unknown>;
+  artifactWorkflows?: Record<string, CapabilityFact & Record<string, unknown>>;
+  audioAdapters?: Record<string, CapabilityFact & {
+    provider?: string;
+    providerPresent?: boolean;
+    providerUsable?: boolean;
+    credentialSource?: string;
+    maturity?: string;
+    capabilities?: string[];
+    outputModes?: string[];
+  }>;
   evidence?: {
     status?: string;
     evidenceRoot?: string;

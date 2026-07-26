@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter
+from api.artifact_workflow import get_artifact_workflow_contracts
+from api.audio_adapters import get_audio_adapter_capabilities
 from api.command_registry import command_registry_status_async
 from api.credentials_service import get_provider_status
 from api.evidence_service import probe_evidence_vault
@@ -140,6 +142,10 @@ async def _capabilities(
     workers = command_status.get("workerAvailability", {})
     provider_status = await get_provider_status()
     evidence_probe = await probe_evidence_vault()
+    audio_adapters = await get_audio_adapter_capabilities()
+    artifact_workflows = get_artifact_workflow_contracts(
+        evidence_ready=evidence_probe.status == "ready"
+    )
     source_count, source_error = await _count_table("source")
     image_count, image_error = await _count_table("image_capsule")
     podcast_count, podcast_error = await _count_table("podcast_episode")
@@ -188,6 +194,28 @@ async def _capabilities(
             f"Manifest-only snapshots recorded: {evidence_probe.snapshotCount}; restoreSupported is false in V1.",
             blocking_reason=None if evidence_probe.status == "ready" else "Evidence vault probe must pass before creating snapshot manifests.",
             last_error=evidence_probe.lastError,
+        ),
+        "artifactWorkflows": _fact(
+            "ready" if all(
+                fact.get("status") == "ready"
+                for key, fact in artifact_workflows.items()
+                if key != "audio_adapter"
+            ) else "not verified",
+            "Artifact workflows publish through source/evidence records; audio adapter execution remains provider-gated.",
+            blocking_reason=None if evidence_probe.status == "ready" else "Evidence vault must be ready before artifact workflow output is trustworthy.",
+            last_error=evidence_probe.lastError,
+        ),
+        "audioAdapters": _fact(
+            "ready" if any(
+                fact.get("status") == "ready"
+                for fact in audio_adapters.values()
+            ) else (
+                "not verified"
+                if any(fact.get("providerPresent") for fact in audio_adapters.values())
+                else "provider missing"
+            ),
+            "Audio adapter readiness is derived from backend credential tests and adapter maturity.",
+            blocking_reason=None if any(fact.get("status") == "ready" for fact in audio_adapters.values()) else "Configure and test a backend audio provider credential before enabling generation.",
         ),
         "sourceWorker": _worker_to_capability(workers.get("source"), "Source command worker readiness."),
         "embeddings": _worker_to_capability(workers.get("embedding"), "Embedding command worker readiness."),
@@ -268,12 +296,19 @@ async def get_diagnostics():
 
     version = await get_version()
     command_status = version["commandRegistry"]
+    evidence_probe = await probe_evidence_vault()
+    audio_adapters = await get_audio_adapter_capabilities()
+    artifact_workflows = get_artifact_workflow_contracts(
+        evidence_ready=evidence_probe.status == "ready"
+    )
     return {
         "health": "shallow",
         "database": database,
         "version": version,
         "runtimeDependencies": _runtime_dependencies(),
-        "evidence": (await probe_evidence_vault()).model_dump(),
+        "evidence": evidence_probe.model_dump(),
+        "artifactWorkflows": artifact_workflows,
+        "audioAdapters": audio_adapters,
         "commandRegistry": command_status,
         "workers": command_status.get("workerAvailability", {}),
         "capabilities": await _capabilities(database, version, command_status),
